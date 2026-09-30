@@ -125,7 +125,7 @@ async function refreshTokenWithRetry(persist: boolean): Promise<void> {
 	}
 }
 
-// Spans the refresh endpoint's default 60s rate limit window.
+// Outlasts the refresh endpoint's default 60s rate limit window.
 const RATE_LIMIT_BACKOFF_MS = [1000, 2000, 4000, 8000, 16000, 32000]
 
 // A 429 says nothing about the session, so giving up would send a valid session to /login.
