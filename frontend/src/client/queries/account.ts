@@ -207,6 +207,9 @@ export function updateSettingsMutationOptions() {
 				omitLanguage?: boolean
 				showMessage?: boolean
 			}, {client, request}) => {
+				if (request.identity?.id !== id || request.identity.type !== type) {
+					throw new DOMException('Account changed', 'AbortError')
+				}
 				// This tab's cache can miss changes made in another tab since the form loaded.
 				const account = await client.fetchQuery({
 					...currentUserQuery(id, type),
@@ -216,9 +219,6 @@ export function updateSettingsMutationOptions() {
 					meta: {handlesError: true},
 				})
 				assertClientRequestContext(request)
-				if (account.id !== id) {
-					throw new DOMException('Account changed', 'AbortError')
-				}
 				const merged = withSettingsEdits(normalizeUserSettings(account.settings), edits)
 				const {language: _language, ...withoutLanguage} = merged
 				const settings = omitLanguage ? withoutLanguage : merged

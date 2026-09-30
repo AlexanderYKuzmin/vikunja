@@ -8,6 +8,7 @@ import {createI18n} from 'vue-i18n'
 import {createRouter, createMemoryHistory} from 'vue-router'
 import General from './General.vue'
 import {AUTH_TYPES} from '@/constants/auth'
+import {removeToken, saveToken} from '@/helpers/auth'
 import testid from '@/directives/testid'
 import {useAuthStore} from '@/stores/auth'
 import en from '@/i18n/lang/en.json'
@@ -67,6 +68,7 @@ describe('General user settings', () => {
 		vi.clearAllMocks()
 		queryClient.clear()
 		setActivePinia(createPinia())
+		removeToken()
 		errors = []
 		sdk.userGetAvatarProvider.mockResolvedValue({data: {avatar_provider: 'default'}})
 	})
@@ -170,6 +172,7 @@ describe('General user settings', () => {
 })
 
 function seedAccount() {
+	saveToken(`header.${btoa(JSON.stringify({id: 1, type: AUTH_TYPES.USER}))}.signature`, false)
 	useAuthStore().setSession({
 		id: 1,
 		type: AUTH_TYPES.USER,

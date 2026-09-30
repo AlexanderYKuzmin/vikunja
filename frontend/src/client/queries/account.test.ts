@@ -200,19 +200,11 @@ describe('account settings mutations', () => {
 		expect(error).toHaveBeenCalledExactlyOnceWith({status: 503})
 	})
 
-	it.each([
-		['the signed-in identity changes during the read', async () => {
+	it('does not write when the signed-in identity changes during the read', async () => {
+		sdk.userShow.mockImplementationOnce(async () => {
 			tokenIdentity.current = {id: 2, type: 1}
 			return {data: SERVER_ACCOUNT}
-		}],
-		['the read returns a different account', async () => ({
-			data: {
-				...SERVER_ACCOUNT,
-				id: 2,
-			},
-		})],
-	])('does not write when %s', async (_label, read) => {
-		sdk.userShow.mockImplementationOnce(read)
+		})
 		const client = new QueryClient()
 
 		await expect(client.getMutationCache()
@@ -225,6 +217,28 @@ describe('account settings mutations', () => {
 			})).rejects.toMatchObject({name: 'AbortError'})
 
 		expect(sdk.userUpdateSettings).not.toHaveBeenCalled()
+		expect(error).not.toHaveBeenCalled()
+	})
+
+	it.each([
+		['id', {id: 2, type: 1}],
+		['type', {id: 1, type: 2}],
+	])('neither reads nor writes when the input %s differs from the token identity', async (_label, identity) => {
+		tokenIdentity.current = identity
+		const client = new QueryClient()
+
+		await expect(client.getMutationCache()
+			.build(client, updateSettingsMutationOptions())
+			.execute({
+				id: 1,
+				type: 1,
+				edits: {name: 'New'},
+				showMessage: false,
+			})).rejects.toMatchObject({name: 'AbortError'})
+
+		expect(sdk.userShow).not.toHaveBeenCalled()
+		expect(sdk.userUpdateSettings).not.toHaveBeenCalled()
+		expect(error).not.toHaveBeenCalled()
 	})
 
 	it('writes one frontend setting back together with every stored setting', async () => {

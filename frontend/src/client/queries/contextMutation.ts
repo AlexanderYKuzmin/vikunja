@@ -50,8 +50,8 @@ export function contextMutationOptions<TData, TInput, TOptimistic = undefined>(o
 			}
 			if (!isRequestContextAbort(cause) && (options.toastError?.(input) ?? true)) error(cause)
 		},
-		onSettled: async (_data, _cause, input, context, {client}) => {
-			if (context && isClientRequestContextCurrent(context.request)) {
+		onSettled: async (_data, cause, input, context, {client}) => {
+			if (context && isClientRequestContextCurrent(context.request) && !isRequestContextAbort(cause)) {
 				await options.onSettled?.(input, client, context.optimistic)
 				assertClientRequestContext(context.request)
 			}
