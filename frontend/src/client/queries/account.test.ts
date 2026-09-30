@@ -281,8 +281,7 @@ describe('account settings mutations', () => {
 	})
 
 	it('keeps a successful write when the reconcile re-read fails', async () => {
-		const client = new QueryClient()
-		client.setQueryData(accountKeys.user(1), {
+		queryClient.setQueryData(accountKeys.user(1), {
 			id: 1,
 			name: 'Old',
 			settings: {name: 'Old'},
@@ -291,8 +290,8 @@ describe('account settings mutations', () => {
 			.mockResolvedValueOnce({data: SERVER_ACCOUNT})
 			.mockRejectedValue({status: 503})
 
-		const saved = await client.getMutationCache()
-			.build(client, updateSettingsMutationOptions())
+		const saved = await queryClient.getMutationCache()
+			.build(queryClient, updateSettingsMutationOptions())
 			.execute({
 				id: 1,
 				type: 1,
@@ -302,8 +301,9 @@ describe('account settings mutations', () => {
 
 		expect(saved.name).toBe('Newer')
 		expect(sdk.userShow).toHaveBeenCalledTimes(2)
-		expect(client.getQueryState(accountKeys.user(1))?.isInvalidated).toBe(true)
-		expect(client.getQueryData<UserInfoResponse>(accountKeys.user(1))?.settings?.name).toBe('Newer')
+		expect(queryClient.getQueryState(accountKeys.user(1))?.isInvalidated).toBe(true)
+		expect(queryClient.getQueryData<UserInfoResponse>(accountKeys.user(1))?.settings?.name).toBe('Newer')
+		expect(error).not.toHaveBeenCalled()
 	})
 
 	it('builds an overlapping frontend setting write on top of the pending one', async () => {

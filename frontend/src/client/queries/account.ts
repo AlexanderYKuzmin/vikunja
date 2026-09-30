@@ -138,13 +138,17 @@ export function currentUserQuery(id: number, type: AuthType = AUTH_TYPES.USER) {
 	})
 }
 
-// checkAuth has to see a fresh /user before the first navigation decides on it.
-export function refreshCurrentUser(id: number, type: AuthType = AUTH_TYPES.USER) {
-	return queryClient.fetchQuery({
+function freshCurrentUserQuery(id: number, type: AuthType) {
+	return {
 		...currentUserQuery(id, type),
 		staleTime: 0,
 		retry: false,
-	})
+	}
+}
+
+// checkAuth has to see a fresh /user before the first navigation decides on it.
+export function refreshCurrentUser(id: number, type: AuthType = AUTH_TYPES.USER) {
+	return queryClient.fetchQuery(freshCurrentUserQuery(id, type))
 }
 
 export function timezonesQuery() {
@@ -183,9 +187,8 @@ function applySettingsUpdate(
 // The account query is mounted for every user session, so the invalidation actually refetches.
 export function reconcileAccount({id, type}: AccountIdentity, client: QueryClient) {
 	return client.fetchQuery({
-		...currentUserQuery(id, type),
-		staleTime: 0,
-		retry: false,
+		...freshCurrentUserQuery(id, type),
+		meta: {handlesError: true},
 	}).catch(() => client.invalidateQueries({queryKey: accountKeys.user(id, type)}))
 }
 
@@ -212,9 +215,7 @@ export function updateSettingsMutationOptions() {
 				}
 				// This tab's cache can miss changes made in another tab since the form loaded.
 				const account = await client.fetchQuery({
-					...currentUserQuery(id, type),
-					staleTime: 0,
-					retry: false,
+					...freshCurrentUserQuery(id, type),
 					// The mutation toasts the failure.
 					meta: {handlesError: true},
 				})
