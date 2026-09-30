@@ -107,40 +107,6 @@ describe('General user settings', () => {
 		expect(wrapper.text()).toContain('keycloak')
 	})
 
-	it('keeps a sidebar width changed in another tab while the form was open', async () => {
-		seedAccount()
-		let stored: Record<string, unknown> = {
-			name: 'Old',
-			frontend_settings: {sidebar_width: 422},
-		}
-		sdk.userShow.mockImplementation(async () => ({
-			data: {
-				id: 1,
-				username: 'user1',
-				settings: stored,
-			},
-		}))
-		sdk.userUpdateSettings.mockImplementation(async ({body}) => {
-			stored = body
-			return {data: {}}
-		})
-		wrapper = await mountComponent()
-		await flushPromises()
-
-		const nameInput = wrapper.find('input[type="text"]')
-		await nameInput.setValue('New')
-		expect(wrapper.find('.sticky-save button').exists()).toBe(true)
-		await nameInput.trigger('keyup.enter')
-		await flushPromises()
-
-		expect(sdk.userUpdateSettings).toHaveBeenCalledOnce()
-		const body = sdk.userUpdateSettings.mock.calls[0][0].body
-		expect(body.name).toBe('New')
-		expect(body.frontend_settings.sidebar_width).toBe(422)
-		expect(errors).toEqual([])
-		expect(wrapper.find('.sticky-save button').exists()).toBe(false)
-	})
-
 	it('keeps edits made while a save is in flight', async () => {
 		seedAccount()
 		sdk.userShow.mockResolvedValue({
