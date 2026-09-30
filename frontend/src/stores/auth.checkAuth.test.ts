@@ -183,6 +183,53 @@ describe('auth store checkAuth refresh (issue #4023)', () => {
 		expect(store.authenticated).toBe(true)
 	})
 
+	it('stays logged out when another tab logs out during the rate limit backoff', async () => {
+		vi.useFakeTimers()
+		localStorage.setItem('token', STALE_JWT)
+		postMock
+			.mockRejectedValueOnce(refreshRejection(429))
+			.mockImplementationOnce(async () => {
+				localStorage.removeItem('token')
+				throw refreshRejection(429)
+			})
+			.mockRejectedValue(refreshRejection(429))
+		const store = useAuthStore()
+
+		const check = store.checkAuth()
+		await vi.runAllTimersAsync()
+		await check
+
+		expect(refreshCalls()).toBe(2)
+		expect(localStorage.getItem('token')).toBeNull()
+		expect(store.authenticated).toBe(false)
+
+		await store.checkAuth()
+
+		expect(refreshCalls()).toBe(2)
+		expect(localStorage.getItem('token')).toBeNull()
+	})
+
+	it('stops the rate limit backoff at a 401 and drops the stale token', async () => {
+		vi.useFakeTimers()
+		localStorage.setItem('token', STALE_JWT)
+		postMock
+			.mockRejectedValueOnce(refreshRejection(429))
+			.mockRejectedValue(refreshRejection(401, 16005))
+		const store = useAuthStore()
+
+		const check = store.checkAuth()
+		await vi.runAllTimersAsync()
+		await check
+
+		expect(refreshCalls()).toBe(2)
+		expect(localStorage.getItem('token')).toBeNull()
+		expect(store.authenticated).toBe(false)
+
+		await store.checkAuth()
+
+		expect(refreshCalls()).toBe(2)
+	})
+
 	it('shares one rate limit backoff between concurrent checks', async () => {
 		vi.useFakeTimers()
 		localStorage.setItem('token', STALE_JWT)
