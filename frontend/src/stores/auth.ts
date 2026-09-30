@@ -139,7 +139,7 @@ async function refreshTokenWithBackoff(jwt: string): Promise<void> {
 			}
 		}
 		await new Promise(resolve => setTimeout(resolve, delay))
-		// Another tab refreshed or logged out (a same-tab logout clears it too).
+		// Another tab refreshed or logged out.
 		if (localStorage.getItem('token') !== jwt) {
 			adoptStoredToken()
 			return
@@ -427,7 +427,7 @@ export const useAuthStore = defineStore('auth', () => {
 						if (freshJwt) {
 							const b64 = freshJwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
 							const p = JSON.parse(atob(b64)) as JwtClaims
-							// The server just issued it, so it's valid even if our clock disagrees.
+							// Freshly issued to this tab or a sibling, so trust it over our clock.
 							isAuthenticated = true
 							currentSessionId.value = p.sid ?? null
 							setSession(p)
