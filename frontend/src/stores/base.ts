@@ -12,14 +12,11 @@ import {useMenuActive} from '@/composables/useMenuActive'
 import {useAuthStore} from '@/stores/auth'
 import router from '@/router'
 import {queryClient} from '@/client/queryClient'
+import {problemCause} from '@/client/problem'
 import {projectQuery, type ProjectResponse} from '@/client/queries/projects'
 import {useProjectBackground} from '@/composables/useProjectBackground'
 
 export const ERROR_RATE_LIMITED = 'rateLimited'
-
-function isRateLimited(e: unknown) {
-	return (e as {cause?: {status?: number}} | undefined)?.cause?.status === 429
-}
 
 export const useBaseStore = defineStore('base', () => {
 	const authStore = useAuthStore()
@@ -117,7 +114,7 @@ export const useBaseStore = defineStore('base', () => {
 				error.value = t('apiConfig.error')
 				return
 			}
-			if (isRateLimited(e)) {
+			if (problemCause(e).status === 429) {
 				error.value = ERROR_RATE_LIMITED
 				return
 			}

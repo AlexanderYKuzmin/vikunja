@@ -15,3 +15,15 @@ export function normalizeProblemBody(error: unknown, response: Response | undefi
 		detail: error.detail ?? error.message,
 	}
 }
+
+// Our wrappers rethrow the SDK's problem body as an Error's cause.
+export function problemCause(error: unknown): {status?: number, code?: number} {
+	const cause = typeof error === 'object' && error !== null && 'cause' in error ? error.cause : undefined
+	if (typeof cause !== 'object' || cause === null) {
+		return {}
+	}
+	return {
+		status: 'status' in cause && typeof cause.status === 'number' ? cause.status : undefined,
+		code: 'code' in cause && typeof cause.code === 'number' ? cause.code : undefined,
+	}
+}

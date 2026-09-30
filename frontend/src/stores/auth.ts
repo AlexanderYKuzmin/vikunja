@@ -19,6 +19,7 @@ import type {RegisterUserRequestWritable, UserInfoBody, VikunjaErrorModel} from 
 import {registerViaInviteLink} from '@/client/inviteLink'
 import {parseValidationErrors} from '@/helpers/parseValidationErrors'
 import {getToken, refreshToken, removeToken, saveToken} from '@/helpers/auth'
+import {problemCause} from '@/client/problem'
 import {serverNowSeconds} from '@/helpers/serverClock'
 import {useWebSocket} from '@/composables/useWebSocket'
 import {setModuleLoading} from '@/stores/helper'
@@ -102,17 +103,6 @@ function redirectToSpecifiedProvider() {
 // pkg/models ErrCodeNoRefreshToken
 const ERROR_CODE_NO_REFRESH_TOKEN = 16005
 
-interface RefreshFailure {
-	cause?: {
-		status?: number
-		code?: number
-	}
-}
-
-function refreshFailureProblem(e: unknown) {
-	return (e as RefreshFailure | undefined)?.cause
-}
-
 // A race-loser's refresh fails but the rotated cookie is already valid, so a
 // second attempt succeeds — recovering what would otherwise be a spurious
 // logout. Exactly one retry: a genuinely dead session still logs out, no loop.
@@ -121,7 +111,7 @@ async function refreshTokenWithRetry(persist: boolean): Promise<void> {
 	try {
 		await refreshToken(persist)
 	} catch (e) {
-		if (refreshFailureProblem(e)?.code === ERROR_CODE_NO_REFRESH_TOKEN) {
+		if (problemCause(e).code === ERROR_CODE_NO_REFRESH_TOKEN) {
 			throw e
 		}
 		await refreshToken(persist)
@@ -137,7 +127,7 @@ async function refreshTokenWithBackoff(persist: boolean): Promise<void> {
 		try {
 			return await refreshTokenWithRetry(persist)
 		} catch (e) {
-			if (refreshFailureProblem(e)?.status !== 429) {
+			if (problemCause(e).status !== 429) {
 				throw e
 			}
 		}
@@ -429,7 +419,7 @@ export const useAuthStore = defineStore('auth', () => {
 						jwtWithFailedRefresh = jwt
 						// A kept stale JWT makes every later page load refresh again.
 						// Skip the removal if another tab stored a fresh token meanwhile.
-						if (refreshFailureProblem(e)?.status === 401 && localStorage.getItem('token') === jwt) {
+						if (problemCause(e).status === 401 && localStorage.getItem('token') === jwt) {
 							removeToken()
 						}
 					}
@@ -536,8 +526,7 @@ export const useAuthStore = defineStore('auth', () => {
 			// If the JWT is still valid, the proactive refresh failure is harmless
 			// — the 401 interceptor will handle it when the token really expires.
 			const isExpired = !session.value?.exp || session.value.exp < serverNowSeconds()
-			const cause = e !== null && typeof e === 'object' && 'cause' in e ? e.cause : undefined
-			const status = cause && typeof cause === 'object' && 'status' in cause ? cause.status : undefined
+			const {status} = problemCause(e)
 			if (isExpired && status && status !== 429) {
 				await logout()
 			}
