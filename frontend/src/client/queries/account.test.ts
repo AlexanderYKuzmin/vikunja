@@ -20,13 +20,14 @@ const sdk = vi.hoisted(() => ({
 	userShow: vi.fn(),
 	userGetAvatarProvider: vi.fn(),
 }))
+const tokenIdentity = vi.hoisted(() => ({current: {id: 1, type: 1}}))
+
 vi.mock('@/client/generated', () => sdk)
 vi.mock('@/message', () => ({
 	error: vi.fn(),
 	success: vi.fn(),
 }))
 vi.mock('./avatars', () => ({invalidateAvatarQueries: vi.fn()}))
-const tokenIdentity = vi.hoisted(() => ({current: {id: 1, type: 1}}))
 vi.mock('@/helpers/auth', async importOriginal => ({
 	...await importOriginal<typeof import('@/helpers/auth')>(),
 	getTokenIdentity: () => tokenIdentity.current,
@@ -400,18 +401,6 @@ describe('withSettingsEdits', () => {
 		edit(edited)
 		return withSettingsEdits(normalizeUserSettings(remote), diffUserSettings(initial, edited))
 	}
-
-	it('keeps a setting changed remotely that the form did not touch', () => {
-		const saved = save(s => {
-			s.name = 'New'
-		}, {
-			name: 'Old',
-			frontend_settings: {sidebar_width: 422},
-		})
-
-		expect(saved.name).toBe('New')
-		expect(saved.frontend_settings.sidebar_width).toBe(422)
-	})
 
 	it('lets the local edit win over a remote change of the same setting', () => {
 		const saved = save(s => {

@@ -110,55 +110,17 @@ describe('General user settings', () => {
 	})
 
 	it('keeps edits made while a save is in flight', async () => {
-		seedAccount()
-		sdk.userShow.mockResolvedValue({
-			data: {
-				id: 1,
-				username: 'user1',
-				is_local_user: true,
-				settings: {name: 'Old'},
-			},
-		})
-		let release = () => {}
-		sdk.userUpdateSettings.mockImplementation(() => new Promise(resolve => {
-			release = () => resolve({data: {}})
-		}))
-		wrapper = await mountComponent()
-		await flushPromises()
-
-		const nameInput = wrapper.find('input[type="text"]')
-		await nameInput.setValue('New')
-		await nameInput.trigger('keyup.enter')
-		await flushPromises()
+		const {nameInput, release} = await startPendingSave()
 		await nameInput.setValue('Newer')
 		release()
 		await flushPromises()
 
 		expect((nameInput.element as HTMLInputElement).value).toBe('Newer')
-		expect(wrapper.find('.sticky-save button').exists()).toBe(true)
+		expect(wrapper?.find('.sticky-save button').exists()).toBe(true)
 	})
 
 	it('ignores a submit while a save is in flight', async () => {
-		seedAccount()
-		sdk.userShow.mockResolvedValue({
-			data: {
-				id: 1,
-				username: 'user1',
-				is_local_user: true,
-				settings: {name: 'Old'},
-			},
-		})
-		let release = () => {}
-		sdk.userUpdateSettings.mockImplementation(() => new Promise(resolve => {
-			release = () => resolve({data: {}})
-		}))
-		wrapper = await mountComponent()
-		await flushPromises()
-
-		const nameInput = wrapper.find('input[type="text"]')
-		await nameInput.setValue('New')
-		await nameInput.trigger('keyup.enter')
-		await flushPromises()
+		const {nameInput, release} = await startPendingSave()
 		await nameInput.setValue('Old')
 		await nameInput.trigger('keyup.enter')
 		await flushPromises()
@@ -167,7 +129,7 @@ describe('General user settings', () => {
 
 		expect(sdk.userUpdateSettings).toHaveBeenCalledOnce()
 		expect((nameInput.element as HTMLInputElement).value).toBe('Old')
-		expect(wrapper.find('.sticky-save button').exists()).toBe(true)
+		expect(wrapper?.find('.sticky-save button').exists()).toBe(true)
 	})
 })
 
@@ -187,4 +149,32 @@ function seedAccount() {
 			frontend_settings: {sidebar_width: 376},
 		},
 	})
+	sdk.userShow.mockResolvedValue({
+		data: {
+			id: 1,
+			username: 'user1',
+			is_local_user: true,
+			settings: {name: 'Old'},
+		},
+	})
+}
+
+async function startPendingSave() {
+	seedAccount()
+	let release = () => {}
+	sdk.userUpdateSettings.mockImplementation(() => new Promise(resolve => {
+		release = () => resolve({data: {}})
+	}))
+	wrapper = await mountComponent()
+	await flushPromises()
+
+	const nameInput = wrapper.find('input[type="text"]')
+	await nameInput.setValue('New')
+	await nameInput.trigger('keyup.enter')
+	await flushPromises()
+	expect(sdk.userUpdateSettings).toHaveBeenCalledOnce()
+	return {
+		nameInput,
+		release: () => release(),
+	}
 }
