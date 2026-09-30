@@ -6,14 +6,16 @@ import {removeToken} from '@/helpers/auth'
 import {AUTH_TYPES} from '@/constants/auth'
 
 // Real @/helpers/auth so the counts cover its dedupe; only the transport is mocked.
-const {postMock, openidCallbackMock} = vi.hoisted(() => ({
+const {postMock, userShowMock, openidCallbackMock} = vi.hoisted(() => ({
 	postMock: vi.fn(),
+	userShowMock: vi.fn(),
 	openidCallbackMock: vi.fn(),
 }))
 
 vi.mock('@/client/generated', async (importOriginal) => ({
 	...await importOriginal<typeof import('@/client/generated')>(),
 	authRefreshToken: postMock,
+	userShow: userShowMock,
 	authOpenidCallback: openidCallbackMock,
 }))
 
@@ -114,12 +116,40 @@ describe('auth store checkAuth refresh (issue #4023)', () => {
 		expect(refreshCalls()).toBe(2)
 	})
 
-	it('keeps the token on a rate limit but does not refresh it again this boot', async () => {
+	it('stays logged in when the refresh succeeds after a rate limit', async () => {
+		vi.useFakeTimers()
+		const freshJwt = `header.${btoa(JSON.stringify({
+			id: 1,
+			type: AUTH_TYPES.USER,
+			exp: Math.floor(Date.now() / 1000) + 3600,
+		}))}.signature`
+		localStorage.setItem('token', STALE_JWT)
+		postMock
+			.mockRejectedValueOnce(refreshRejection(429))
+			.mockRejectedValueOnce(refreshRejection(429))
+			.mockResolvedValue({data: {token: freshJwt}})
+		userShowMock.mockResolvedValue({data: {id: 1, username: 'user1'}})
+		const store = useAuthStore()
+
+		const check = store.checkAuth()
+		await vi.runAllTimersAsync()
+		await check
+		vi.useRealTimers()
+
+		expect(localStorage.getItem('token')).toBe(freshJwt)
+		expect(store.authenticated).toBe(true)
+	})
+
+	it('keeps the token on a persistent rate limit but does not refresh it again this boot', async () => {
+		vi.useFakeTimers()
 		localStorage.setItem('token', STALE_JWT)
 		postMock.mockRejectedValue(refreshRejection(429))
 		const store = useAuthStore()
 
-		await store.checkAuth()
+		const check = store.checkAuth()
+		await vi.runAllTimersAsync()
+		await check
+		vi.useRealTimers()
 		const callsAfterFirstCheck = refreshCalls()
 
 		expect(localStorage.getItem('token')).toBe(STALE_JWT)

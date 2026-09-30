@@ -128,6 +128,24 @@ async function refreshTokenWithRetry(persist: boolean): Promise<void> {
 	}
 }
 
+// Spans the refresh endpoint's default 60s rate limit window.
+const RATE_LIMIT_BACKOFF_MS = [1000, 2000, 4000, 8000, 16000, 32000]
+
+// A 429 says nothing about the session, so giving up would send a valid session to /login.
+async function refreshTokenWithBackoff(persist: boolean): Promise<void> {
+	for (const delay of RATE_LIMIT_BACKOFF_MS) {
+		try {
+			return await refreshTokenWithRetry(persist)
+		} catch (e) {
+			if (refreshFailureProblem(e)?.status !== 429) {
+				throw e
+			}
+		}
+		await new Promise(resolve => setTimeout(resolve, delay))
+	}
+	await refreshTokenWithRetry(persist)
+}
+
 function getLoggedInVia(): string | null {
 	return localStorage.getItem('loggedInViaProvider')
 }
@@ -397,7 +415,7 @@ export const useAuthStore = defineStore('auth', () => {
 					// refresh before giving up. This lets users who reopen the app
 					// after the short JWT TTL seamlessly resume their session.
 					try {
-						await refreshTokenWithRetry(true)
+						await refreshTokenWithBackoff(true)
 						const freshJwt = getToken()
 						if (freshJwt) {
 							const b64 = freshJwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
