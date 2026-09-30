@@ -113,6 +113,7 @@ describe('General user settings', () => {
 			data: {
 				id: 1,
 				username: 'user1',
+				is_local_user: true,
 				settings: {name: 'Old'},
 			},
 		})
@@ -141,6 +142,7 @@ describe('General user settings', () => {
 			data: {
 				id: 1,
 				username: 'user1',
+				is_local_user: true,
 				settings: {name: 'Old'},
 			},
 		})
@@ -176,6 +178,7 @@ function seedAccount() {
 	queryClient.setQueryData(accountKeys.user(1), {
 		id: 1,
 		username: 'user1',
+		is_local_user: true,
 		settings: {
 			name: 'Old',
 			frontend_settings: {sidebar_width: 376},
