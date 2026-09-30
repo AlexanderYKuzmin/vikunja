@@ -1,4 +1,4 @@
-import {describe, it, expect, beforeEach, vi} from 'vitest'
+import {describe, it, expect, beforeEach, afterEach, vi} from 'vitest'
 import {setActivePinia, createPinia} from 'pinia'
 
 import {useAuthStore} from './auth'
@@ -48,6 +48,12 @@ const STALE_JWT = `header.${btoa(JSON.stringify({
 	exp: Math.floor(Date.now() / 1000) - 3600,
 }))}.signature`
 
+const FRESH_JWT = `header.${btoa(JSON.stringify({
+	id: 1,
+	type: AUTH_TYPES.USER,
+	exp: Math.floor(Date.now() / 1000) + 3600,
+}))}.signature`
+
 function refreshRejection(status: number, code?: number) {
 	return {status, code}
 }
@@ -62,6 +68,10 @@ describe('auth store checkAuth refresh (issue #4023)', () => {
 		postMock.mockReset()
 		removeToken()
 		localStorage.clear()
+	})
+
+	afterEach(() => {
+		vi.useRealTimers()
 	})
 
 	it('does not refresh without a stored token', async () => {
@@ -118,25 +128,20 @@ describe('auth store checkAuth refresh (issue #4023)', () => {
 
 	it('stays logged in when the refresh succeeds after a rate limit', async () => {
 		vi.useFakeTimers()
-		const freshJwt = `header.${btoa(JSON.stringify({
-			id: 1,
-			type: AUTH_TYPES.USER,
-			exp: Math.floor(Date.now() / 1000) + 3600,
-		}))}.signature`
 		localStorage.setItem('token', STALE_JWT)
 		postMock
 			.mockRejectedValueOnce(refreshRejection(429))
 			.mockRejectedValueOnce(refreshRejection(429))
-			.mockResolvedValue({data: {token: freshJwt}})
+			.mockResolvedValue({data: {token: FRESH_JWT}})
 		userShowMock.mockResolvedValue({data: {id: 1, username: 'user1'}})
 		const store = useAuthStore()
 
 		const check = store.checkAuth()
 		await vi.runAllTimersAsync()
 		await check
-		vi.useRealTimers()
 
-		expect(localStorage.getItem('token')).toBe(freshJwt)
+		expect(refreshCalls()).toBe(3)
+		expect(localStorage.getItem('token')).toBe(FRESH_JWT)
 		expect(store.authenticated).toBe(true)
 	})
 
@@ -149,32 +154,27 @@ describe('auth store checkAuth refresh (issue #4023)', () => {
 		const check = store.checkAuth()
 		await vi.runAllTimersAsync()
 		await check
-		vi.useRealTimers()
-		const callsAfterFirstCheck = refreshCalls()
 
+		expect(refreshCalls()).toBe(7)
 		expect(localStorage.getItem('token')).toBe(STALE_JWT)
+		expect(store.authenticated).toBe(false)
 
 		await store.checkAuth()
 
-		expect(refreshCalls()).toBe(callsAfterFirstCheck)
+		expect(refreshCalls()).toBe(7)
 	})
 
 	it('keeps a token another tab stored while the refresh was failing', async () => {
-		const otherTabJwt = `header.${btoa(JSON.stringify({
-			id: 1,
-			type: AUTH_TYPES.USER,
-			exp: Math.floor(Date.now() / 1000) + 3600,
-		}))}.signature`
 		localStorage.setItem('token', STALE_JWT)
 		postMock.mockImplementation(async () => {
-			localStorage.setItem('token', otherTabJwt)
+			localStorage.setItem('token', FRESH_JWT)
 			throw refreshRejection(401, 16004)
 		})
 		const store = useAuthStore()
 
 		await store.checkAuth()
 
-		expect(localStorage.getItem('token')).toBe(otherTabJwt)
+		expect(localStorage.getItem('token')).toBe(FRESH_JWT)
 	})
 })
 

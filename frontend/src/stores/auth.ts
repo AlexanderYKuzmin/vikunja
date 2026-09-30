@@ -111,7 +111,8 @@ async function refreshTokenWithRetry(persist: boolean): Promise<void> {
 	try {
 		await refreshToken(persist)
 	} catch (e) {
-		if (problemCause(e).code === ERROR_CODE_NO_REFRESH_TOKEN) {
+		const {status, code} = problemCause(e)
+		if (status === 429 || code === ERROR_CODE_NO_REFRESH_TOKEN) {
 			throw e
 		}
 		await refreshToken(persist)
