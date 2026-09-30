@@ -51,6 +51,13 @@ describe('contextMutationOptions', () => {
 		expect(error).toHaveBeenCalledWith(cause)
 	})
 
+	it('does not toast a request-context abort while the context is current', async () => {
+		await expect(execute({mutationFn: async () => {
+			throw new DOMException('Account changed', 'AbortError')
+		}})).rejects.toMatchObject({name: 'AbortError'})
+		expect(error).not.toHaveBeenCalled()
+	})
+
 	it('suppresses the error toast after the context changed', async () => {
 		await expect(execute({mutationFn: async () => {
 			session.epoch++

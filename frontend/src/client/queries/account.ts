@@ -14,7 +14,7 @@ import type {
 } from '@/client/generated'
 import {queryClient} from '@/client/queryClient'
 import {contextMutationOptions} from './contextMutation'
-import {assertClientRequestContext, captureClientRequestContext} from '@/client/requestContext'
+import {assertClientRequestContext} from '@/client/requestContext'
 import {AUTH_TYPES, type AuthType} from '@/constants/auth'
 import {invalidateAvatarQueries} from './avatars'
 import {
@@ -206,8 +206,7 @@ export function updateSettingsMutationOptions() {
 				edits: UserSettingsEdits
 				omitLanguage?: boolean
 				showMessage?: boolean
-			}, client) => {
-				const request = captureClientRequestContext()
+			}, {client, request}) => {
 				// This tab's cache can miss changes made in another tab since the form loaded.
 				const account = await client.fetchQuery({
 					...currentUserQuery(id, type),
