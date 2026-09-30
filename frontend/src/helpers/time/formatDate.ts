@@ -36,8 +36,9 @@ export const formatDate = (date: Date | string | null | undefined, f: string) =>
 	return dayjs(parsed).locale(locale).format(f)
 }
 
-export function formatDateLong(date) {
-	return formatDate(date, 'LLLL')
+export function formatDateLong(date: Date | string | null | undefined) {
+	const {store: timeFormat} = useTimeFormat()
+	return formatDisplayDateFormat(date, DATE_DISPLAY.WEEKDAY_DAY_MONTH_YEAR, timeFormat.value)
 }
 
 export function formatDateShort(date) {
