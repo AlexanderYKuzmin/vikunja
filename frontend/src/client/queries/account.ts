@@ -247,8 +247,8 @@ export function updateFrontendSettingsMutationOptions() {
 		...contextMutationOptions({
 			mutationFn: async ({id, type, frontendSettings}: AccountIdentity & {
 				frontendSettings: Partial<FrontendSettings>
-			}) => {
-				const current = queryClient.getQueryData<UserInfoResponse>(accountKeys.user(id, type))
+			}, {client}) => {
+				const current = client.getQueryData<UserInfoResponse>(accountKeys.user(id, type))
 				if (!current) {
 					throw new Error('Cannot store a frontend setting before the account is loaded')
 				}
