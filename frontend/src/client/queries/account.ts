@@ -14,6 +14,7 @@ import type {
 } from '@/client/generated'
 import {queryClient} from '@/client/queryClient'
 import {contextMutationOptions} from './contextMutation'
+import {assertClientRequestContext, captureClientRequestContext} from '@/client/requestContext'
 import {AUTH_TYPES, type AuthType} from '@/constants/auth'
 import {invalidateAvatarQueries} from './avatars'
 import {
@@ -201,18 +202,27 @@ function withFrontendSettings(
 export function updateSettingsMutationOptions() {
 	return mutationOptions({
 		...contextMutationOptions({
-			mutationFn: async ({edits, omitLanguage}: AccountIdentity & {
+			mutationFn: async ({id, type, edits, omitLanguage}: AccountIdentity & {
 				edits: UserSettingsEdits
 				omitLanguage?: boolean
 				showMessage?: boolean
-			}) => {
+			}, client) => {
+				const request = captureClientRequestContext()
 				// This tab's cache can miss changes made in another tab since the form loaded.
-				const {data} = await userShow()
-				const {language, ...withoutLanguage} = withSettingsEdits(normalizeUserSettings(data.settings), edits)
-				const settings = omitLanguage ? withoutLanguage : {
-					...withoutLanguage,
-					language,
+				const account = await client.fetchQuery({
+					...currentUserQuery(id, type),
+					staleTime: 0,
+					retry: false,
+					// The mutation toasts the failure.
+					meta: {handlesError: true},
+				})
+				assertClientRequestContext(request)
+				if (account.id !== id) {
+					throw new DOMException('Account changed', 'AbortError')
 				}
+				const merged = withSettingsEdits(normalizeUserSettings(account.settings), edits)
+				const {language: _language, ...withoutLanguage} = merged
+				const settings = omitLanguage ? withoutLanguage : merged
 				await userUpdateSettings({body: settings})
 				return settings
 			},

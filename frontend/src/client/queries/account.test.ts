@@ -13,6 +13,7 @@ import {
 import type {UserSettings} from '@/helpers/userSettings'
 import {queryClient} from '@/client/queryClient'
 import {invalidateAvatarQueries} from './avatars'
+import {error} from '@/message'
 
 const sdk = vi.hoisted(() => ({
 	userUpdateSettings: vi.fn(),
@@ -25,6 +26,11 @@ vi.mock('@/message', () => ({
 	success: vi.fn(),
 }))
 vi.mock('./avatars', () => ({invalidateAvatarQueries: vi.fn()}))
+const tokenIdentity = vi.hoisted(() => ({current: {id: 1, type: 1}}))
+vi.mock('@/helpers/auth', async importOriginal => ({
+	...await importOriginal<typeof import('@/helpers/auth')>(),
+	getTokenIdentity: () => tokenIdentity.current,
+}))
 
 const SERVER_ACCOUNT = {
 	id: 1,
@@ -42,6 +48,7 @@ describe('account settings mutations', () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
 		queryClient.clear()
+		tokenIdentity.current = {id: 1, type: 1}
 		sdk.userUpdateSettings.mockResolvedValue({data: {}})
 		sdk.userShow.mockResolvedValue({data: SERVER_ACCOUNT})
 		sdk.userGetAvatarProvider.mockResolvedValue({data: {avatar_provider: 'initials'}})
@@ -162,8 +169,9 @@ describe('account settings mutations', () => {
 	})
 
 	it('leaves the language out of the write when asked to', async () => {
-		await new QueryClient().getMutationCache()
-			.build(new QueryClient(), updateSettingsMutationOptions())
+		const client = new QueryClient()
+		await client.getMutationCache()
+			.build(client, updateSettingsMutationOptions())
 			.execute({
 				id: 1,
 				type: 1,
@@ -177,15 +185,44 @@ describe('account settings mutations', () => {
 
 	it('does not write when the current settings cannot be read', async () => {
 		sdk.userShow.mockRejectedValue({status: 503})
+		const client = new QueryClient()
 
-		await expect(new QueryClient().getMutationCache()
-			.build(new QueryClient(), updateSettingsMutationOptions())
+		await expect(client.getMutationCache()
+			.build(client, updateSettingsMutationOptions())
 			.execute({
 				id: 1,
 				type: 1,
 				edits: {name: 'New'},
 				showMessage: false,
 			})).rejects.toEqual({status: 503})
+
+		expect(sdk.userUpdateSettings).not.toHaveBeenCalled()
+		expect(error).toHaveBeenCalledExactlyOnceWith({status: 503})
+	})
+
+	it.each([
+		['the signed-in identity changes during the read', async () => {
+			tokenIdentity.current = {id: 2, type: 1}
+			return {data: SERVER_ACCOUNT}
+		}],
+		['the read returns a different account', async () => ({
+			data: {
+				...SERVER_ACCOUNT,
+				id: 2,
+			},
+		})],
+	])('does not write when %s', async (_label, read) => {
+		sdk.userShow.mockImplementationOnce(read)
+		const client = new QueryClient()
+
+		await expect(client.getMutationCache()
+			.build(client, updateSettingsMutationOptions())
+			.execute({
+				id: 1,
+				type: 1,
+				edits: {name: 'New'},
+				showMessage: false,
+			})).rejects.toMatchObject({name: 'AbortError'})
 
 		expect(sdk.userUpdateSettings).not.toHaveBeenCalled()
 	})
