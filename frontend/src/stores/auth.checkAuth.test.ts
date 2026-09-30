@@ -164,6 +164,25 @@ describe('auth store checkAuth refresh (issue #4023)', () => {
 		expect(refreshCalls()).toBe(7)
 	})
 
+	it('adopts a token another tab stored during the rate limit backoff', async () => {
+		vi.useFakeTimers()
+		localStorage.setItem('token', STALE_JWT)
+		postMock.mockImplementation(async () => {
+			localStorage.setItem('token', FRESH_JWT)
+			throw refreshRejection(429)
+		})
+		userShowMock.mockResolvedValue({data: {id: 1, username: 'user1'}})
+		const store = useAuthStore()
+
+		const check = store.checkAuth()
+		await vi.runAllTimersAsync()
+		await check
+
+		expect(refreshCalls()).toBe(1)
+		expect(localStorage.getItem('token')).toBe(FRESH_JWT)
+		expect(store.authenticated).toBe(true)
+	})
+
 	it('keeps a token another tab stored while the refresh was failing', async () => {
 		localStorage.setItem('token', STALE_JWT)
 		postMock.mockImplementation(async () => {

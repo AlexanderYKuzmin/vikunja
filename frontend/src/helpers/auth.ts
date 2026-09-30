@@ -31,6 +31,10 @@ export const getToken = (): string | null => {
 	return savedToken
 }
 
+export const adoptStoredToken = () => {
+	savedToken = localStorage.getItem('token')
+}
+
 function getTokenPayload(token: string | null): Record<string, unknown> | null {
 	if (!token) return null
 	try {

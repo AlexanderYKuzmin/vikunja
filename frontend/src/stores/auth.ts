@@ -18,7 +18,13 @@ import {invalidateAvatarQueries} from '@/client/queries/avatars'
 import type {RegisterUserRequestWritable, UserInfoBody, VikunjaErrorModel} from '@/client/generated'
 import {registerViaInviteLink} from '@/client/inviteLink'
 import {parseValidationErrors} from '@/helpers/parseValidationErrors'
-import {getToken, refreshToken, removeToken, saveToken} from '@/helpers/auth'
+import {
+	adoptStoredToken,
+	getToken,
+	refreshToken,
+	removeToken,
+	saveToken,
+} from '@/helpers/auth'
 import {problemCause} from '@/client/problem'
 import {serverNowSeconds} from '@/helpers/serverClock'
 import {useWebSocket} from '@/composables/useWebSocket'
@@ -123,18 +129,23 @@ async function refreshTokenWithRetry(persist: boolean): Promise<void> {
 const RATE_LIMIT_BACKOFF_MS = [1000, 2000, 4000, 8000, 16000, 32000]
 
 // A 429 says nothing about the session, so giving up would send a valid session to /login.
-async function refreshTokenWithBackoff(persist: boolean): Promise<void> {
+async function refreshTokenWithBackoff(jwt: string): Promise<void> {
 	for (const delay of RATE_LIMIT_BACKOFF_MS) {
 		try {
-			return await refreshTokenWithRetry(persist)
+			return await refreshTokenWithRetry(true)
 		} catch (e) {
 			if (problemCause(e).status !== 429) {
 				throw e
 			}
 		}
 		await new Promise(resolve => setTimeout(resolve, delay))
+		// Another tab refreshed or logged out (a same-tab logout clears it too).
+		if (localStorage.getItem('token') !== jwt) {
+			adoptStoredToken()
+			return
+		}
 	}
-	await refreshTokenWithRetry(persist)
+	await refreshTokenWithRetry(true)
 }
 
 function getLoggedInVia(): string | null {
@@ -406,7 +417,7 @@ export const useAuthStore = defineStore('auth', () => {
 					// refresh before giving up. This lets users who reopen the app
 					// after the short JWT TTL seamlessly resume their session.
 					try {
-						await refreshTokenWithBackoff(true)
+						await refreshTokenWithBackoff(jwt)
 						const freshJwt = getToken()
 						if (freshJwt) {
 							const b64 = freshJwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
