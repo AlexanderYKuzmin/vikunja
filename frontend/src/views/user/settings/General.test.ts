@@ -168,6 +168,37 @@ describe('General user settings', () => {
 		expect((nameInput.element as HTMLInputElement).value).toBe('Newer')
 		expect(wrapper.find('.sticky-save button').exists()).toBe(true)
 	})
+
+	it('ignores a submit while a save is in flight', async () => {
+		seedAccount()
+		sdk.userShow.mockResolvedValue({
+			data: {
+				id: 1,
+				username: 'user1',
+				settings: {name: 'Old'},
+			},
+		})
+		let release = () => {}
+		sdk.userUpdateSettings.mockImplementation(() => new Promise(resolve => {
+			release = () => resolve({data: {}})
+		}))
+		wrapper = await mountComponent()
+		await flushPromises()
+
+		const nameInput = wrapper.find('input[type="text"]')
+		await nameInput.setValue('New')
+		await nameInput.trigger('keyup.enter')
+		await flushPromises()
+		await nameInput.setValue('Old')
+		await nameInput.trigger('keyup.enter')
+		await flushPromises()
+		release()
+		await flushPromises()
+
+		expect(sdk.userUpdateSettings).toHaveBeenCalledOnce()
+		expect((nameInput.element as HTMLInputElement).value).toBe('Old')
+		expect(wrapper.find('.sticky-save button').exists()).toBe(true)
+	})
 })
 
 function seedAccount() {

@@ -523,6 +523,7 @@ const hasFilters = computed(() => projectList.projectsArray.some(isSavedFilterPr
 const loading = updateUserSettings.isPending
 
 async function updateSettings() {
+	if (loading.value) return
 	const submitted = createUserSettingsDraft(settings.value)
 	let saved
 	try {
