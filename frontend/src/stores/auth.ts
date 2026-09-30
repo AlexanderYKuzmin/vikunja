@@ -185,6 +185,8 @@ export const useAuthStore = defineStore('auth', () => {
 	const lastUserInfoRefresh = ref<Date | null>(null)
 	// Stops every navigation of this boot from re-refreshing a token whose refresh already failed.
 	let jwtWithFailedRefresh: string | null = null
+	// Boot and the router guard both run checkAuth; one backoff serves both.
+	let backoffRefresh: Promise<void> | null = null
 	const isLoading = ref(false)
 
 	const authUser = computed(() => authenticated.value && session.value?.type === AUTH_TYPES.USER)
@@ -417,7 +419,10 @@ export const useAuthStore = defineStore('auth', () => {
 					// refresh before giving up. This lets users who reopen the app
 					// after the short JWT TTL seamlessly resume their session.
 					try {
-						await refreshTokenWithBackoff(jwt)
+						backoffRefresh ??= refreshTokenWithBackoff(jwt).finally(() => {
+							backoffRefresh = null
+						})
+						await backoffRefresh
 						const freshJwt = getToken()
 						if (freshJwt) {
 							const b64 = freshJwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')

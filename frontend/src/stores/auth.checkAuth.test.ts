@@ -183,6 +183,22 @@ describe('auth store checkAuth refresh (issue #4023)', () => {
 		expect(store.authenticated).toBe(true)
 	})
 
+	it('shares one rate limit backoff between concurrent checks', async () => {
+		vi.useFakeTimers()
+		localStorage.setItem('token', STALE_JWT)
+		postMock.mockRejectedValue(refreshRejection(429))
+		const store = useAuthStore()
+
+		const first = store.checkAuth()
+		// Offset so the second check can't piggyback on the first's in-flight POST.
+		await vi.advanceTimersByTimeAsync(500)
+		const second = store.checkAuth()
+		await vi.runAllTimersAsync()
+		await Promise.all([first, second])
+
+		expect(refreshCalls()).toBe(7)
+	})
+
 	it('keeps a token another tab stored while the refresh was failing', async () => {
 		localStorage.setItem('token', STALE_JWT)
 		postMock.mockImplementation(async () => {
