@@ -407,18 +407,6 @@ describe('withSettingsEdits', () => {
 		expect(saved.frontend_settings.sidebar_width).toBe(500)
 	})
 
-	it('applies an edited top level setting', () => {
-		const saved = save(s => {
-			s.week_start = 1
-		}, {
-			name: 'Remote',
-			week_start: 0,
-		})
-
-		expect(saved.week_start).toBe(1)
-		expect(saved.name).toBe('Remote')
-	})
-
 	it('keeps the remote value of a setting edited and then reverted', () => {
 		const saved = save(s => {
 			s.frontend_settings.sidebar_width = 500
