@@ -1,5 +1,6 @@
 import {queryOptions, mutationOptions, useMutation, type QueryClient} from '@tanstack/vue-query'
 import type {DeepReadonly} from 'vue'
+import isEqual from 'fast-deep-equal'
 import {
 	userShow,
 	userUpdateSettings,
@@ -95,6 +96,31 @@ export function createUserSettingsDraft(settings: DeepReadonly<UserSettings>): U
 			...settings.frontend_settings,
 			quick_add_default_reminders: settings.frontend_settings.quick_add_default_reminders
 				.map(reminder => ({...reminder})),
+		},
+	}
+}
+
+function changedEntries<T extends object>(initial: T, edited: T): Partial<T> {
+	return Object.fromEntries(Object.entries(edited)
+		.filter(([key, value]) => !isEqual(value, initial[key as keyof T]))) as Partial<T>
+}
+
+// PUT /user/settings/general is a full replace, so the form's stale copy would revert settings
+// changed elsewhere (e.g. the sidebar width) while it was open.
+export function applySettingsEdits(
+	latest: DeepReadonly<UserSettings>,
+	initial: UserSettings,
+	edited: UserSettings,
+): UserSettings {
+	const merged = createUserSettingsDraft(latest)
+	const {frontend_settings: initialFrontend, ...initialRest} = initial
+	const {frontend_settings: editedFrontend, ...editedRest} = edited
+	return {
+		...merged,
+		...changedEntries(initialRest, editedRest),
+		frontend_settings: {
+			...merged.frontend_settings,
+			...changedEntries(initialFrontend, editedFrontend),
 		},
 	}
 }

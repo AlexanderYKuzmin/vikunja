@@ -2,6 +2,8 @@ import {beforeEach, describe, expect, it, vi} from 'vitest'
 import {QueryClient} from '@tanstack/vue-query'
 import {
 	accountKeys,
+	applySettingsEdits,
+	createUserSettingsDraft,
 	normalizeUserSettings,
 	updateFrontendSettingsMutationOptions,
 	updateSettingsMutationOptions,
@@ -268,5 +270,21 @@ describe('normalizeUserSettings', () => {
 		})
 
 		expect(settings.frontend_settings.quick_add_default_reminders).toEqual([])
+	})
+})
+
+describe('applySettingsEdits', () => {
+	it('keeps settings changed elsewhere while the form was open', () => {
+		const initial = normalizeUserSettings({name: 'Old', frontend_settings: {sidebar_width: 376}})
+		const edited = createUserSettingsDraft(initial)
+		edited.name = 'New'
+		edited.frontend_settings.play_sound_when_done = false
+		const latest = normalizeUserSettings({name: 'Old', frontend_settings: {sidebar_width: 422}})
+
+		const merged = applySettingsEdits(latest, initial, edited)
+
+		expect(merged.name).toBe('New')
+		expect(merged.frontend_settings.play_sound_when_done).toBe(false)
+		expect(merged.frontend_settings.sidebar_width).toBe(422)
 	})
 })
