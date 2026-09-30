@@ -525,15 +525,13 @@ const loading = updateUserSettings.isPending
 async function updateSettings() {
 	if (loading.value) return
 	const submitted = createUserSettingsDraft(settings.value)
-	let saved
-	try {
-		saved = await updateUserSettings.mutateAsync({
-			id: props.identity.id,
-			type: props.identity.type,
-			edits: diffUserSettings(initialSettings.value, submitted),
-			omitLanguage: configStore.demo_mode_enabled,
-		})
-	} catch { return }
+	const saved = await updateUserSettings.mutateAsync({
+		id: props.identity.id,
+		type: props.identity.type,
+		edits: diffUserSettings(initialSettings.value, submitted),
+		omitLanguage: configStore.demo_mode_enabled,
+	}).catch(() => null)
+	if (!saved) return
 	if (configStore.demo_mode_enabled) setLanguage(submitted.language).catch(error)
 	const editedSinceSubmit = diffUserSettings(submitted, settings.value)
 	initialSettings.value = createUserSettingsDraft({
