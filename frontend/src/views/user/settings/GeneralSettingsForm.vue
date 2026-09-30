@@ -310,9 +310,10 @@ import {
 	createUserSettingsDraft,
 	diffUserSettings,
 	useUpdateSettingsMutation,
+	withSettingsEdits,
 	type AccountIdentity,
 } from '@/client/queries/account'
-import {computed, watch, ref, type Ref} from 'vue'
+import {computed, ref, type Ref} from 'vue'
 import {useI18n} from 'vue-i18n'
 import isEqual from 'fast-deep-equal'
 
@@ -446,15 +447,7 @@ const quickAddDefaultReminders = computed({
 })
 
 const initialSettings = ref(createUserSettingsDraft(authStore.settings))
-const isDirty = ref(false)
-
-watch(
-	() => settings.value,
-	() => {
-		isDirty.value = !isEqual(settings.value, initialSettings.value)
-	},
-	{deep: true},
-)
+const isDirty = computed(() => !isEqual(settings.value, initialSettings.value))
 
 function enforceBackgroundBrightnessBounds() {
 	const value = Number(settings.value.frontend_settings.background_brightness)
@@ -541,12 +534,12 @@ async function updateSettings() {
 		})
 	} catch { return }
 	if (configStore.demo_mode_enabled) setLanguage(submitted.language).catch(error)
+	const editedSinceSubmit = diffUserSettings(submitted, settings.value)
 	initialSettings.value = createUserSettingsDraft({
 		language: submitted.language,
 		...saved,
 	})
-	settings.value = createUserSettingsDraft(initialSettings.value)
-	isDirty.value = false
+	settings.value = withSettingsEdits(initialSettings.value, editedSinceSubmit)
 }
 </script>
 
