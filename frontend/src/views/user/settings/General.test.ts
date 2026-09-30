@@ -1,6 +1,6 @@
 import {VueQueryPlugin} from '@tanstack/vue-query'
 import {queryClient} from '@/client/queryClient'
-import {accountKeys, type UserInfoResponse} from '@/client/queries/account'
+import {accountKeys} from '@/client/queries/account'
 import {describe, it, expect, beforeEach, afterEach, vi} from 'vitest'
 import {mount, flushPromises, type VueWrapper} from '@vue/test-utils'
 import {setActivePinia, createPinia} from 'pinia'
@@ -14,8 +14,9 @@ import en from '@/i18n/lang/en.json'
 
 const sdk = vi.hoisted(() => ({
 	userTimezones: vi.fn(async () => ({data: []})),
-	userUpdateSettings: vi.fn(async () => ({data: {}})),
+	userUpdateSettings: vi.fn(),
 	userShow: vi.fn(),
+	userGetAvatarProvider: vi.fn(),
 }))
 vi.mock('@/client/generated', () => sdk)
 
@@ -49,7 +50,8 @@ async function mountComponent() {
 				FormCheckbox: true,
 				ShortcutRecorder: true,
 				Reminders: true,
-				CustomTransition: true,
+				CustomTransition: {template: '<div><slot /></div>'},
+				XButton: {template: '<button><slot /></button>'},
 			},
 			config: {
 				errorHandler(err) {
@@ -62,8 +64,11 @@ async function mountComponent() {
 
 describe('General user settings', () => {
 	beforeEach(() => {
+		vi.clearAllMocks()
+		queryClient.clear()
 		setActivePinia(createPinia())
 		errors = []
+		sdk.userGetAvatarProvider.mockResolvedValue({data: {avatar_provider: 'default'}})
 	})
 
 	afterEach(() => {
@@ -102,34 +107,53 @@ describe('General user settings', () => {
 		expect(wrapper.text()).toContain('keycloak')
 	})
 
-	it('keeps a sidebar width changed while the form was open', async () => {
-		useAuthStore().setSession({
-			id: 1,
-			type: AUTH_TYPES.USER,
-			exp: 0,
-		})
-		queryClient.setQueryData(accountKeys.user(1), {
-			id: 1,
-			username: 'user1',
-			settings: {name: 'Old', frontend_settings: {sidebar_width: 376}},
+	it('keeps a sidebar width changed in another tab while the form was open', async () => {
+		seedAccount()
+		let stored: Record<string, unknown> = {
+			name: 'Old',
+			frontend_settings: {sidebar_width: 422},
+		}
+		sdk.userShow.mockImplementation(async () => ({
+			data: {
+				id: 1,
+				username: 'user1',
+				settings: stored,
+			},
+		}))
+		sdk.userUpdateSettings.mockImplementation(async ({body}) => {
+			stored = body
+			return {data: {}}
 		})
 		wrapper = await mountComponent()
 		await flushPromises()
 
-		queryClient.setQueryData<UserInfoResponse>(accountKeys.user(1), current => current && {
-			...current,
-			settings: {...current.settings, frontend_settings: {sidebar_width: 422}},
-		})
 		const nameInput = wrapper.find('input[type="text"]')
 		await nameInput.setValue('New')
+		expect(wrapper.find('.sticky-save button').exists()).toBe(true)
 		await nameInput.trigger('keyup.enter')
 		await flushPromises()
 
-		expect(sdk.userUpdateSettings).toHaveBeenCalledWith({
-			body: expect.objectContaining({
-				name: 'New',
-				frontend_settings: expect.objectContaining({sidebar_width: 422}),
-			}),
-		})
+		expect(sdk.userUpdateSettings).toHaveBeenCalledOnce()
+		const body = sdk.userUpdateSettings.mock.calls[0][0].body
+		expect(body.name).toBe('New')
+		expect(body.frontend_settings.sidebar_width).toBe(422)
+		expect(errors).toEqual([])
+		expect(wrapper.find('.sticky-save button').exists()).toBe(false)
 	})
 })
+
+function seedAccount() {
+	useAuthStore().setSession({
+		id: 1,
+		type: AUTH_TYPES.USER,
+		exp: 0,
+	})
+	queryClient.setQueryData(accountKeys.user(1), {
+		id: 1,
+		username: 'user1',
+		settings: {
+			name: 'Old',
+			frontend_settings: {sidebar_width: 376},
+		},
+	})
+}

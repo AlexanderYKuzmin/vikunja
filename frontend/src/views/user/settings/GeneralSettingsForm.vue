@@ -306,7 +306,12 @@
 
 
 <script setup lang="ts">
-import {applySettingsEdits, createUserSettingsDraft, useUpdateSettingsMutation, type AccountIdentity} from '@/client/queries/account'
+import {
+	createUserSettingsDraft,
+	diffUserSettings,
+	useUpdateSettingsMutation,
+	type AccountIdentity,
+} from '@/client/queries/account'
 import {computed, watch, ref, type Ref} from 'vue'
 import {useI18n} from 'vue-i18n'
 import isEqual from 'fast-deep-equal'
@@ -525,18 +530,22 @@ const hasFilters = computed(() => projectList.projectsArray.some(isSavedFilterPr
 const loading = updateUserSettings.isPending
 
 async function updateSettings() {
-	const merged = applySettingsEdits(authStore.settings, initialSettings.value, settings.value)
-	const {language, ...withoutLanguage} = merged
+	const submitted = createUserSettingsDraft(settings.value)
+	let saved
 	try {
-		await updateUserSettings.mutateAsync({
+		saved = await updateUserSettings.mutateAsync({
 			id: props.identity.id,
 			type: props.identity.type,
-			settings: configStore.demo_mode_enabled ? withoutLanguage : merged,
+			edits: diffUserSettings(initialSettings.value, submitted),
+			omitLanguage: configStore.demo_mode_enabled,
 		})
-		if (configStore.demo_mode_enabled) setLanguage(language).catch(error)
 	} catch { return }
-	settings.value = merged
-	initialSettings.value = createUserSettingsDraft(merged)
+	if (configStore.demo_mode_enabled) setLanguage(submitted.language).catch(error)
+	initialSettings.value = createUserSettingsDraft({
+		language: submitted.language,
+		...saved,
+	})
+	settings.value = createUserSettingsDraft(initialSettings.value)
 	isDirty.value = false
 }
 </script>

@@ -100,27 +100,32 @@ export function createUserSettingsDraft(settings: DeepReadonly<UserSettings>): U
 	}
 }
 
+export type UserSettingsEdits = Partial<Omit<UserSettings, 'frontend_settings'>> & {
+	frontend_settings?: Partial<FrontendSettings>
+}
+
 function changedEntries<T extends object>(initial: T, edited: T): Partial<T> {
 	return Object.fromEntries(Object.entries(edited)
 		.filter(([key, value]) => !isEqual(value, initial[key as keyof T]))) as Partial<T>
 }
 
-// PUT /user/settings/general is a full replace, so the form's stale copy would revert settings
-// changed elsewhere (e.g. the sidebar width) while it was open.
-export function applySettingsEdits(
-	latest: DeepReadonly<UserSettings>,
-	initial: UserSettings,
-	edited: UserSettings,
-): UserSettings {
-	const merged = createUserSettingsDraft(latest)
+export function diffUserSettings(initial: UserSettings, edited: UserSettings): UserSettingsEdits {
 	const {frontend_settings: initialFrontend, ...initialRest} = initial
 	const {frontend_settings: editedFrontend, ...editedRest} = edited
 	return {
-		...merged,
 		...changedEntries(initialRest, editedRest),
+		frontend_settings: changedEntries(initialFrontend, editedFrontend),
+	}
+}
+
+export function withSettingsEdits(settings: DeepReadonly<UserSettings>, edits: UserSettingsEdits): UserSettings {
+	const draft = createUserSettingsDraft(settings)
+	return {
+		...draft,
+		...edits,
 		frontend_settings: {
-			...merged.frontend_settings,
-			...changedEntries(initialFrontend, editedFrontend),
+			...draft.frontend_settings,
+			...edits.frontend_settings,
 		},
 	}
 }
@@ -189,24 +194,25 @@ const ACCOUNT_SETTINGS_SCOPE = {id: 'account-settings'}
 function withFrontendSettings(
 	settings: UserGeneralSettings | undefined,
 	frontendSettings: Partial<FrontendSettings>,
-): UserGeneralSettingsWritable {
-	const stored = normalizeUserSettings(settings)
-	return {
-		...stored,
-		frontend_settings: {
-			...stored.frontend_settings,
-			...frontendSettings,
-		},
-	}
+): UserSettings {
+	return withSettingsEdits(normalizeUserSettings(settings), {frontend_settings: frontendSettings})
 }
 
 export function updateSettingsMutationOptions() {
 	return mutationOptions({
 		...contextMutationOptions({
-			mutationFn: async ({settings}: AccountIdentity & {
-				settings: UserGeneralSettingsWritable
+			mutationFn: async ({edits, omitLanguage}: AccountIdentity & {
+				edits: UserSettingsEdits
+				omitLanguage?: boolean
 				showMessage?: boolean
 			}) => {
+				// This tab's cache can miss changes made in another tab since the form loaded.
+				const {data} = await userShow()
+				const {language, ...withoutLanguage} = withSettingsEdits(normalizeUserSettings(data.settings), edits)
+				const settings = omitLanguage ? withoutLanguage : {
+					...withoutLanguage,
+					language,
+				}
 				await userUpdateSettings({body: settings})
 				return settings
 			},
