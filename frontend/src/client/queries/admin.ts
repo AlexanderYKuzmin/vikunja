@@ -25,8 +25,7 @@ import type {
 import {captureClientRequestContext, assertClientRequestContext} from '@/client/requestContext'
 import {contextMutationOptions} from './contextMutation'
 import {useSecretMutation} from './secretMutation'
-import {fetchAllPages} from './fetchAllPages'
-import {API_MAX_PER_PAGE} from './pagination'
+import {PICKER_PAGE_SIZE, toPaginated} from './pagination'
 import {projectKeys} from './projects'
 import {accountKeys, type UserInfoResponse} from './account'
 import {i18n} from '@/i18n'
@@ -65,10 +64,10 @@ export function adminUsersQuery(q = '', page = 1) {
 export function adminUserSearchQuery(q: string) {
 	return queryOptions({
 		queryKey: adminKeys.userSearch(q),
-		queryFn: ({signal}) => fetchAllPages(async page => (await adminUsersList({
-			query: {q, page, per_page: API_MAX_PER_PAGE},
+		queryFn: async ({signal}) => toPaginated((await adminUsersList({
+			query: {page: 1, per_page: PICKER_PAGE_SIZE, q},
 			signal,
-		})).data),
+		})).data, 1),
 	})
 }
 
@@ -90,10 +89,10 @@ export function adminInvitesQuery(page: number) {
 export function adminTeamsQuery(q: string) {
 	return queryOptions({
 		queryKey: adminKeys.teams(q),
-		queryFn: ({signal}) => fetchAllPages(async page => (await adminTeamsList({
-			query: {q, page, per_page: API_MAX_PER_PAGE},
+		queryFn: async ({signal}) => toPaginated((await adminTeamsList({
+			query: {page: 1, per_page: PICKER_PAGE_SIZE, q},
 			signal,
-		})).data),
+		})).data, 1),
 	})
 }
 

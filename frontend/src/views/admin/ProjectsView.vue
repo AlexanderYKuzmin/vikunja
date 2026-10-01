@@ -18,6 +18,7 @@
 					:placeholder="$t('admin.projects.filterByOwner')"
 					:aria-label="$t('admin.projects.filterByOwner')"
 					:search-results="userResults"
+					:total-results="searchData?.total"
 					label="username"
 					@search="searchUsers"
 				>
@@ -153,6 +154,7 @@
 							:loading="userSearchLoading"
 							:placeholder="$t('admin.searchUsersPlaceholder')"
 							:search-results="userResults"
+							:total-results="searchData?.total"
 							label="username"
 							@search="searchUsers"
 						>
@@ -238,7 +240,7 @@ const {data: searchData, isFetching: userSearchLoading} = useQuery(computed(() =
 	...adminUserSearchQuery(userSearch.value),
 	enabled: userSearch.value.length >= 2,
 })))
-const userResults = computed(() => userSearch.value.length >= 2 ? searchData.value ?? [] : [])
+const userResults = computed(() => userSearch.value.length >= 2 ? searchData.value?.items ?? [] : [])
 const reassignMutation = useReassignAdminProjectMutation()
 const {isPending: reassigning} = reassignMutation
 const showReassigning = useDelayedLoading(reassigning)
