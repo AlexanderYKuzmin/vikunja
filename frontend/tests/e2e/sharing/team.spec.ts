@@ -5,6 +5,7 @@ import {TeamProjectFactory} from '../../factories/team_project'
 import {UserFactory} from '../../factories/user'
 import {createProjects} from '../project/prepareProjects'
 import {login, setupApiUrl} from '../../support/authenticateUser'
+import {serverPageSize} from '../../support/pagination'
 
 test.describe('Team', () => {
 	test('Creates a new team', async ({authenticatedPage: page}) => {
@@ -36,6 +37,37 @@ test.describe('Team', () => {
 		for (const t of teams) {
 			await expect(page.locator('ul.teams')).toContainText(t.name)
 		}
+	})
+
+	test('Paginates the team list', async ({authenticatedPage: page, apiContext}) => {
+		const pageSize = await serverPageSize(apiContext)
+		await TeamMemberFactory.create(pageSize + 5, {
+			team_id: '{increment}',
+		})
+		const teams = await TeamFactory.create(pageSize + 5, {
+			id: '{increment}',
+			name: (i: number) => `paged team ${i}`,
+		})
+		const rows = page.locator('ul.teams li')
+
+		await page.goto('/teams')
+		await expect(rows).toHaveCount(pageSize)
+		const firstPage = await rows.allTextContents()
+
+		await page.getByRole('link', {name: 'Goto page 2'}).click()
+		await expect(page).toHaveURL(/[?&]page=2/)
+		await expect(rows).toHaveCount(5)
+		const secondPage = await rows.allTextContents()
+
+		expect([...firstPage, ...secondPage].map(name => name.trim()).sort())
+			.toEqual(teams.map(team => team.name).sort())
+
+		await page.reload()
+		await expect(rows).toHaveCount(5)
+
+		await page.goto('/teams?page=99')
+		await expect(page).toHaveURL(/[?&]page=2(&|$)/)
+		await expect(rows).toHaveCount(5)
 	})
 
 	test('Allows an admin to edit the team', async ({authenticatedPage: page}) => {
