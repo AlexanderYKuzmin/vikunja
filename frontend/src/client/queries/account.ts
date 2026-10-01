@@ -205,7 +205,7 @@ async function saveSettingsEdits(
 	if (request.identity?.id !== id || request.identity.type !== type) {
 		throw new DOMException('Account changed', 'AbortError')
 	}
-	// Not the account query: it misses other tabs' writes, and a fetch would clobber optimistic values.
+	// Direct read: an account query fetch would overwrite optimistic cache values.
 	const {data: account} = await userShow()
 	assertClientRequestContext(request)
 	const merged = withSettingsEdits(normalizeUserSettings(account.settings), edits)
