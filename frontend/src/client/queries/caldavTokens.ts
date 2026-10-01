@@ -1,19 +1,41 @@
-import {queryOptions, useMutation} from '@tanstack/vue-query'
-import {caldavTokensList, caldavTokensCreate, caldavTokensDelete, type Token} from '@/client/generated'
+import {
+	keepPreviousData,
+	queryOptions,
+	useMutation,
+} from '@tanstack/vue-query'
+import {
+	caldavTokensList,
+	caldavTokensCreate,
+	caldavTokensDelete,
+	type Token,
+} from '@/client/generated'
+import {
+	removeFromPages,
+	toPaginated,
+	type Paginated,
+} from './pagination'
 import {contextMutationOptions} from './contextMutation'
 import {useSecretMutation} from './secretMutation'
 import {i18n} from '@/i18n'
 
-export const caldavTokenKeys = {all: ['caldav-tokens'] as const}
+export type CaldavTokenPage = Paginated<Token>
 
-export function caldavTokensQuery() {
+export const caldavTokenKeys = {
+	all: ['caldav-tokens'] as const,
+	list: (page: number) => ['caldav-tokens', 'list', page] as const,
+}
+
+export function caldavTokensQuery(page: number) {
 	return queryOptions({
-		queryKey: caldavTokenKeys.all,
-		// The handler returns every token on each page, so later pages would only repeat them.
-		queryFn: async ({signal}) => (await caldavTokensList({
-			query: {page: 1},
-			signal,
-		})).data.items ?? [],
+		queryKey: caldavTokenKeys.list(page),
+		queryFn: async ({signal}): Promise<CaldavTokenPage> => {
+			const {data} = await caldavTokensList({
+				query: {page},
+				signal,
+			})
+			return toPaginated(data, page)
+		},
+		placeholderData: keepPreviousData,
 	})
 }
 
@@ -31,7 +53,7 @@ export function useCreateCaldavTokenMutation() {
 export function deleteCaldavTokenMutationOptions() {
 	return contextMutationOptions({
 		mutationFn: async (id: number) => (await caldavTokensDelete({path: {id}})).data,
-		onSuccess: (_data, id, client) => client.setQueryData<Token[]>(caldavTokenKeys.all, current => current?.filter(token => token.id !== id)),
+		onSuccess: (_data, id, client) => removeFromPages<Token>(client, caldavTokenKeys.all, token => token.id === id),
 		onSettled: (_input, client) => client.invalidateQueries({queryKey: caldavTokenKeys.all}),
 		successMessage: () => i18n.global.t('user.settings.caldav.deleteSuccess'),
 	})
