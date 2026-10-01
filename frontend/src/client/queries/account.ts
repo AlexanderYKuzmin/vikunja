@@ -14,7 +14,7 @@ import type {
 } from '@/client/generated'
 import {queryClient} from '@/client/queryClient'
 import {contextMutationOptions} from './contextMutation'
-import {assertClientRequestContext} from '@/client/requestContext'
+import {assertClientRequestContext, type ClientRequestContext} from '@/client/requestContext'
 import {AUTH_TYPES, type AuthType} from '@/constants/auth'
 import {invalidateAvatarQueries} from './avatars'
 import {
@@ -195,37 +195,34 @@ export function reconcileAccount({id, type}: AccountIdentity, client: QueryClien
 // Overlapping full-replacement PUTs would let the slower one revert the faster.
 const ACCOUNT_SETTINGS_SCOPE = {id: 'account-settings'}
 
-function withFrontendSettings(
-	settings: UserGeneralSettings | undefined,
-	frontendSettings: Partial<FrontendSettings>,
-): UserSettings {
-	return withSettingsEdits(normalizeUserSettings(settings), {frontend_settings: frontendSettings})
+async function saveSettingsEdits(
+	{id, type, edits, omitLanguage}: AccountIdentity & {
+		edits: UserSettingsEdits
+		omitLanguage?: boolean
+	},
+	{request}: {request: ClientRequestContext},
+) {
+	if (request.identity?.id !== id || request.identity.type !== type) {
+		throw new DOMException('Account changed', 'AbortError')
+	}
+	// Not the account query: it misses other tabs' writes, and a fetch would clobber optimistic values.
+	const {data: account} = await userShow()
+	assertClientRequestContext(request)
+	const merged = withSettingsEdits(normalizeUserSettings(account.settings), edits)
+	const {language: _language, ...withoutLanguage} = merged
+	const settings = omitLanguage ? withoutLanguage : merged
+	await userUpdateSettings({body: settings})
+	return settings
 }
 
 export function updateSettingsMutationOptions() {
 	return mutationOptions({
 		...contextMutationOptions({
-			mutationFn: async ({id, type, edits, omitLanguage}: AccountIdentity & {
+			mutationFn: (input: AccountIdentity & {
 				edits: UserSettingsEdits
 				omitLanguage?: boolean
 				showMessage?: boolean
-			}, {client, request}) => {
-				if (request.identity?.id !== id || request.identity.type !== type) {
-					throw new DOMException('Account changed', 'AbortError')
-				}
-				// This tab's cache can miss changes made in another tab since the form loaded.
-				const account = await client.fetchQuery({
-					...freshCurrentUserQuery(id, type),
-					// The mutation toasts the failure.
-					meta: {handlesError: true},
-				})
-				assertClientRequestContext(request)
-				const merged = withSettingsEdits(normalizeUserSettings(account.settings), edits)
-				const {language: _language, ...withoutLanguage} = merged
-				const settings = omitLanguage ? withoutLanguage : merged
-				await userUpdateSettings({body: settings})
-				return settings
-			},
+			}, context) => saveSettingsEdits(input, context),
 			onSuccess: (settings, input, client) => applySettingsUpdate(settings, input, client),
 			onSettled: reconcileAccount,
 			successMessage: (_data, {showMessage}) => showMessage === false
@@ -245,17 +242,13 @@ export function useUpdateSettingsMutation() {
 export function updateFrontendSettingsMutationOptions() {
 	return mutationOptions({
 		...contextMutationOptions({
-			mutationFn: async ({id, type, frontendSettings}: AccountIdentity & {
+			mutationFn: ({id, type, frontendSettings}: AccountIdentity & {
 				frontendSettings: Partial<FrontendSettings>
-			}, {client}) => {
-				const current = client.getQueryData<UserInfoResponse>(accountKeys.user(id, type))
-				if (!current) {
-					throw new Error('Cannot store a frontend setting before the account is loaded')
-				}
-				const settings = withFrontendSettings(current.settings, frontendSettings)
-				await userUpdateSettings({body: settings})
-				return settings
-			},
+			}, context) => saveSettingsEdits({
+				id,
+				type,
+				edits: {frontend_settings: frontendSettings},
+			}, context),
 			optimistic: {
 				queryKeys: ({id, type}) => [accountKeys.user(id, type)],
 				update: ({id, type, frontendSettings}, client) => {
@@ -263,7 +256,10 @@ export function updateFrontendSettingsMutationOptions() {
 						...current,
 						settings: {
 							...current.settings,
-							...withFrontendSettings(current.settings, frontendSettings),
+							...withSettingsEdits(
+								normalizeUserSettings(current.settings),
+								{frontend_settings: frontendSettings},
+							),
 						},
 					} : current)
 				},

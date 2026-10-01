@@ -242,16 +242,33 @@ describe('account settings mutations', () => {
 		expect(error).not.toHaveBeenCalled()
 	})
 
-	it('writes one frontend setting back together with every stored setting', async () => {
+	it('writes a frontend setting on top of the settings the server holds, not the cached ones', async () => {
 		queryClient.setQueryData(accountKeys.user(1), {
 			id: 1,
-			name: 'Keep',
+			name: 'Old',
 			settings: {
-				name: 'Keep',
-				timezone: 'Europe/Berlin',
-				default_project_id: 7,
-				frontend_settings: {comment_sort_order: 'asc'},
+				name: 'Old',
+				frontend_settings: {sidebar_width: 280},
 			},
+		})
+		sdk.userShow.mockResolvedValueOnce({
+			data: {
+				id: 1,
+				name: 'Other tab',
+				settings: {
+					name: 'Other tab',
+					timezone: 'Europe/Berlin',
+					frontend_settings: {
+						sidebar_width: 280,
+						comment_sort_order: 'desc',
+					},
+				},
+			},
+		})
+		let shownWhileSaving: unknown
+		sdk.userUpdateSettings.mockImplementationOnce(async () => {
+			shownWhileSaving = queryClient.getQueryData<UserInfoResponse>(accountKeys.user(1))?.settings?.frontend_settings
+			return {data: {}}
 		})
 
 		await queryClient.getMutationCache()
@@ -259,26 +276,61 @@ describe('account settings mutations', () => {
 			.execute({
 				id: 1,
 				type: 1,
-				frontendSettings: {comment_sort_order: 'desc'},
+				frontendSettings: {sidebar_width: 400},
 			})
 
 		const body = sdk.userUpdateSettings.mock.calls[0][0].body
-		expect(body.name).toBe('Keep')
-		expect(body.timezone).toBe('Europe/Berlin')
-		expect(body.default_project_id).toBe(7)
-		expect(body.frontend_settings.comment_sort_order).toBe('desc')
+		expect(body).toMatchObject({
+			name: 'Other tab',
+			timezone: 'Europe/Berlin',
+			frontend_settings: {
+				sidebar_width: 400,
+				comment_sort_order: 'desc',
+			},
+		})
+		expect(shownWhileSaving).toMatchObject({sidebar_width: 400})
 	})
 
-	it('refuses to write a frontend setting before the account is loaded', async () => {
+	it('neither reads nor writes a frontend setting for another identity', async () => {
+		tokenIdentity.current = {id: 2, type: 1}
+		const account = {
+			id: 1,
+			settings: {frontend_settings: {sidebar_width: 280}},
+		}
+		queryClient.setQueryData(accountKeys.user(1), account)
+
 		await expect(queryClient.getMutationCache()
 			.build(queryClient, updateFrontendSettingsMutationOptions())
 			.execute({
 				id: 1,
 				type: 1,
-				frontendSettings: {comment_sort_order: 'desc'},
-			})).rejects.toThrow('Cannot store a frontend setting before the account is loaded')
+				frontendSettings: {sidebar_width: 400},
+			})).rejects.toMatchObject({name: 'AbortError'})
+
+		expect(sdk.userShow).not.toHaveBeenCalled()
+		expect(sdk.userUpdateSettings).not.toHaveBeenCalled()
+		expect(queryClient.getQueryData(accountKeys.user(1))).toEqual(account)
+	})
+
+	it('rolls back a frontend setting without writing when the stored settings cannot be read', async () => {
+		const account = {
+			id: 1,
+			settings: {frontend_settings: {sidebar_width: 280}},
+		}
+		queryClient.setQueryData(accountKeys.user(1), account)
+		sdk.userShow.mockRejectedValue({status: 503})
+
+		await expect(queryClient.getMutationCache()
+			.build(queryClient, updateFrontendSettingsMutationOptions())
+			.execute({
+				id: 1,
+				type: 1,
+				frontendSettings: {sidebar_width: 400},
+			})).rejects.toEqual({status: 503})
 
 		expect(sdk.userUpdateSettings).not.toHaveBeenCalled()
+		expect(queryClient.getQueryData(accountKeys.user(1))).toEqual(account)
+		expect(error).toHaveBeenCalledExactlyOnceWith({status: 503})
 	})
 
 	it('keeps a successful write when the reconcile re-read fails', async () => {
