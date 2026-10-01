@@ -31,6 +31,10 @@ export const getToken = (): string | null => {
 	return savedToken
 }
 
+export const adoptStoredToken = () => {
+	savedToken = localStorage.getItem('token')
+}
+
 function getTokenPayload(token: string | null): Record<string, unknown> | null {
 	if (!token) return null
 	try {
@@ -133,9 +137,8 @@ async function doRefresh(persist: boolean): Promise<void> {
 			const storedRefreshToken = localStorage.getItem('desktopOAuthRefreshToken')
 
 			if (storedRefreshToken !== desktopRefreshTokenBeforeLock) {
-				const currentToken = localStorage.getItem('token')
-				if (currentToken) {
-					savedToken = currentToken
+				if (localStorage.getItem('token')) {
+					adoptStoredToken()
 					return
 				}
 			}
@@ -161,7 +164,7 @@ async function doRefresh(persist: boolean): Promise<void> {
 		// another tab already refreshed. Just adopt the new token.
 		const currentToken = localStorage.getItem('token')
 		if (currentToken && currentToken !== tokenBeforeLock) {
-			savedToken = currentToken
+			adoptStoredToken()
 			return
 		}
 

@@ -18,7 +18,14 @@ import {invalidateAvatarQueries} from '@/client/queries/avatars'
 import type {RegisterUserRequestWritable, UserInfoBody, VikunjaErrorModel} from '@/client/generated'
 import {registerViaInviteLink} from '@/client/inviteLink'
 import {parseValidationErrors} from '@/helpers/parseValidationErrors'
-import {getToken, refreshToken, removeToken, saveToken} from '@/helpers/auth'
+import {
+	adoptStoredToken,
+	getToken,
+	refreshToken,
+	removeToken,
+	saveToken,
+} from '@/helpers/auth'
+import {problemCause} from '@/client/problem'
 import {serverNowSeconds} from '@/helpers/serverClock'
 import {useWebSocket} from '@/composables/useWebSocket'
 import {setModuleLoading} from '@/stores/helper'
@@ -102,17 +109,6 @@ function redirectToSpecifiedProvider() {
 // pkg/models ErrCodeNoRefreshToken
 const ERROR_CODE_NO_REFRESH_TOKEN = 16005
 
-interface RefreshFailure {
-	cause?: {
-		status?: number
-		code?: number
-	}
-}
-
-function refreshFailureProblem(e: unknown) {
-	return (e as RefreshFailure | undefined)?.cause
-}
-
 // A race-loser's refresh fails but the rotated cookie is already valid, so a
 // second attempt succeeds — recovering what would otherwise be a spurious
 // logout. Exactly one retry: a genuinely dead session still logs out, no loop.
@@ -121,11 +117,35 @@ async function refreshTokenWithRetry(persist: boolean): Promise<void> {
 	try {
 		await refreshToken(persist)
 	} catch (e) {
-		if (refreshFailureProblem(e)?.code === ERROR_CODE_NO_REFRESH_TOKEN) {
+		const {status, code} = problemCause(e)
+		if (status === 429 || code === ERROR_CODE_NO_REFRESH_TOKEN) {
 			throw e
 		}
 		await refreshToken(persist)
 	}
+}
+
+// Outlasts the refresh endpoint's default 60s rate limit window.
+const RATE_LIMIT_BACKOFF_MS = [1000, 2000, 4000, 8000, 16000, 32000]
+
+// A 429 says nothing about the session, so giving up would send a valid session to /login.
+async function refreshTokenWithBackoff(jwt: string): Promise<void> {
+	for (const delay of RATE_LIMIT_BACKOFF_MS) {
+		try {
+			return await refreshTokenWithRetry(true)
+		} catch (e) {
+			if (problemCause(e).status !== 429) {
+				throw e
+			}
+		}
+		await new Promise(resolve => setTimeout(resolve, delay))
+		// Another tab refreshed or logged out.
+		if (localStorage.getItem('token') !== jwt) {
+			adoptStoredToken()
+			return
+		}
+	}
+	await refreshTokenWithRetry(true)
 }
 
 function getLoggedInVia(): string | null {
@@ -165,6 +185,8 @@ export const useAuthStore = defineStore('auth', () => {
 	const lastUserInfoRefresh = ref<Date | null>(null)
 	// Stops every navigation of this boot from re-refreshing a token whose refresh already failed.
 	let jwtWithFailedRefresh: string | null = null
+	// Boot hydration and the initial navigation guard share one backoff.
+	let backoffRefresh: Promise<void> | null = null
 	const isLoading = ref(false)
 
 	const authUser = computed(() => authenticated.value && session.value?.type === AUTH_TYPES.USER)
@@ -353,7 +375,7 @@ export const useAuthStore = defineStore('auth', () => {
 	/**
 	 * Populates user information from jwt token saved in local storage in store
 	 */
-	async function checkAuth() {
+	async function checkAuth({boot = false}: {boot?: boolean} = {}) {
 		const now = new Date()
 		const oneMinuteAgo = new Date(new Date().setMinutes(now.getMinutes() - 1))
 		// This function can be called from multiple places at the same time and shortly after one another.
@@ -369,12 +391,17 @@ export const useAuthStore = defineStore('auth', () => {
 		let isAuthenticated = false
 		let jwtUserType: number | undefined
 		if (jwt) {
+			let payload: JwtClaims | null = null
 			try {
 				const base64 = jwt
 					.split('.')[1]
 					.replace(/-/g, '+')
 					.replace(/_/g, '/')
-				const payload = JSON.parse(atob(base64)) as JwtClaims
+				payload = JSON.parse(atob(base64)) as JwtClaims
+			} catch (_) {
+				logout()
+			}
+			if (payload) {
 				jwtUserType = payload.type
 				isAuthenticated = payload.exp >= serverNowSeconds()
 				currentSessionId.value = payload.sid ?? null
@@ -397,27 +424,37 @@ export const useAuthStore = defineStore('auth', () => {
 					// refresh before giving up. This lets users who reopen the app
 					// after the short JWT TTL seamlessly resume their session.
 					try {
-						await refreshTokenWithRetry(true)
+						if (boot) {
+							backoffRefresh ??= refreshTokenWithBackoff(jwt).finally(() => {
+								backoffRefresh = null
+							})
+							await backoffRefresh
+						} else {
+							await refreshTokenWithRetry(true)
+						}
 						const freshJwt = getToken()
 						if (freshJwt) {
 							const b64 = freshJwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
 							const p = JSON.parse(atob(b64)) as JwtClaims
-							// The server just issued it, so it's valid even if our clock disagrees.
+							// Freshly issued to this tab or a sibling, so trust it over our clock.
 							isAuthenticated = true
 							currentSessionId.value = p.sid ?? null
 							setSession(p)
 						}
 					} catch (e) {
+						const {status} = problemCause(e)
+						// Surfaces as the boot error screen; the kept token lets a reload retry.
+						if (boot && status === 429) {
+							throw e
+						}
 						jwtWithFailedRefresh = jwt
 						// A kept stale JWT makes every later page load refresh again.
 						// Skip the removal if another tab stored a fresh token meanwhile.
-						if (refreshFailureProblem(e)?.status === 401 && localStorage.getItem('token') === jwt) {
+						if (status === 401 && localStorage.getItem('token') === jwt) {
 							removeToken()
 						}
 					}
 				}
-			} catch (_) {
-				logout()
 			}
 
 			if (isAuthenticated && jwtUserType !== AUTH_TYPES.LINK_SHARE) {
@@ -518,8 +555,7 @@ export const useAuthStore = defineStore('auth', () => {
 			// If the JWT is still valid, the proactive refresh failure is harmless
 			// — the 401 interceptor will handle it when the token really expires.
 			const isExpired = !session.value?.exp || session.value.exp < serverNowSeconds()
-			const cause = e !== null && typeof e === 'object' && 'cause' in e ? e.cause : undefined
-			const status = cause && typeof cause === 'object' && 'status' in cause ? cause.status : undefined
+			const {status} = problemCause(e)
 			if (isExpired && status && status !== 429) {
 				await logout()
 			}

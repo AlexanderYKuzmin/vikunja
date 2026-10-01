@@ -12,8 +12,11 @@ import {useMenuActive} from '@/composables/useMenuActive'
 import {useAuthStore} from '@/stores/auth'
 import router from '@/router'
 import {queryClient} from '@/client/queryClient'
+import {problemCause} from '@/client/problem'
 import {projectQuery, type ProjectResponse} from '@/client/queries/projects'
 import {useProjectBackground} from '@/composables/useProjectBackground'
+
+export const ERROR_RATE_LIMITED = 'rateLimited'
 
 export const useBaseStore = defineStore('base', () => {
 	const authStore = useAuthStore()
@@ -95,13 +98,13 @@ export const useBaseStore = defineStore('base', () => {
 				if (storedApiUrl) {
 					// Hydrate /info before marking ready; otherwise pro-feature gates stay off for returning desktop users.
 					await checkAndSetApiUrl(storedApiUrl)
-					await authStore.checkAuth()
+					await authStore.checkAuth({boot: true})
 				}
 				return
 			}
 
 			await checkAndSetApiUrl(window.API_URL)
-			await authStore.checkAuth()
+			await authStore.checkAuth({boot: true})
 		} catch (e: unknown) {
 			if (e instanceof NoApiUrlProvidedError) {
 				error.value = ERROR_NO_API_URL
@@ -109,6 +112,10 @@ export const useBaseStore = defineStore('base', () => {
 			}
 			if (e instanceof InvalidApiUrlProvidedError) {
 				error.value = t('apiConfig.error')
+				return
+			}
+			if (problemCause(e).status === 429) {
+				error.value = ERROR_RATE_LIMITED
 				return
 			}
 			error.value = String(e instanceof Error ? e.message : e)

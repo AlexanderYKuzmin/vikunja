@@ -152,7 +152,7 @@ describe('auth store renewToken retry (issue #2863)', () => {
 
 		await store.renewToken()
 
-		expect(refreshTokenMock).toHaveBeenCalledTimes(2)
+		expect(refreshTokenMock).toHaveBeenCalledTimes(1)
 		expect(store.authenticated).toBe(true)
 		expect(routerPushMock).not.toHaveBeenCalled()
 	})
