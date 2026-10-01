@@ -391,12 +391,17 @@ export const useAuthStore = defineStore('auth', () => {
 		let isAuthenticated = false
 		let jwtUserType: number | undefined
 		if (jwt) {
+			let payload: JwtClaims | null = null
 			try {
 				const base64 = jwt
 					.split('.')[1]
 					.replace(/-/g, '+')
 					.replace(/_/g, '/')
-				const payload = JSON.parse(atob(base64)) as JwtClaims
+				payload = JSON.parse(atob(base64)) as JwtClaims
+			} catch (_) {
+				logout()
+			}
+			if (payload) {
 				jwtUserType = payload.type
 				isAuthenticated = payload.exp >= serverNowSeconds()
 				currentSessionId.value = payload.sid ?? null
@@ -437,16 +442,19 @@ export const useAuthStore = defineStore('auth', () => {
 							setSession(p)
 						}
 					} catch (e) {
+						const {status} = problemCause(e)
+						// Surfaces as the boot error screen; the kept token lets a reload retry.
+						if (boot && status === 429) {
+							throw e
+						}
 						jwtWithFailedRefresh = jwt
 						// A kept stale JWT makes every later page load refresh again.
 						// Skip the removal if another tab stored a fresh token meanwhile.
-						if (problemCause(e).status === 401 && localStorage.getItem('token') === jwt) {
+						if (status === 401 && localStorage.getItem('token') === jwt) {
 							removeToken()
 						}
 					}
 				}
-			} catch (_) {
-				logout()
 			}
 
 			if (isAuthenticated && jwtUserType !== AUTH_TYPES.LINK_SHARE) {

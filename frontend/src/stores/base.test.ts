@@ -1,5 +1,5 @@
 import {createPinia, setActivePinia} from 'pinia'
-import {beforeEach, describe, expect, it, vi} from 'vitest'
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 
 import {AUTH_TYPES} from '@/constants/auth'
 import {queryClient} from '@/client/queryClient'
@@ -7,6 +7,7 @@ import {projectKeys, type ProjectResponse} from '@/client/queries/projects'
 
 const auth = vi.hoisted(() => ({
 	token: null as string | null,
+	refreshToken: vi.fn(),
 }))
 
 const sdk = vi.hoisted(() => ({
@@ -22,7 +23,7 @@ vi.mock('@/client/generated', async (importOriginal) => ({
 
 vi.mock('@/helpers/auth', () => ({
 	getToken: () => auth.token,
-	refreshToken: vi.fn(),
+	refreshToken: auth.refreshToken,
 	removeToken: vi.fn(() => {
 		auth.token = null
 	}),
@@ -108,9 +109,15 @@ describe('base store identity reset', () => {
 	beforeEach(() => {
 		setActivePinia(createPinia())
 		auth.token = null
+		auth.refreshToken.mockReset()
+		localStorage.clear()
 		queryClient.clear()
 		Object.values(sdk).forEach(mock => mock.mockReset())
 		window.URL.revokeObjectURL = vi.fn()
+	})
+
+	afterEach(() => {
+		vi.useRealTimers()
 	})
 
 	it('displays the cached background of the current project', async () => {
@@ -195,5 +202,23 @@ describe('base store identity reset', () => {
 		await store.appReady
 
 		expect(store.error).toBe(ERROR_RATE_LIMITED)
+	})
+
+	it('shows the rate limit error when the boot refresh stays rate limited', async () => {
+		vi.useFakeTimers()
+		auth.token = `header.${btoa(JSON.stringify({
+			id: 1,
+			type: AUTH_TYPES.USER,
+			exp: Math.floor(Date.now() / 1000) - 3600,
+		}))}.signature`
+		localStorage.setItem('token', auth.token)
+		auth.refreshToken.mockRejectedValue(new Error('Error renewing token: ', {cause: {status: 429}}))
+
+		const store = useBaseStore()
+		await vi.runAllTimersAsync()
+		await store.appReady
+
+		expect(store.error).toBe(ERROR_RATE_LIMITED)
+		expect(auth.refreshToken).toHaveBeenCalledTimes(7)
 	})
 })

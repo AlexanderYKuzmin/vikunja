@@ -161,23 +161,19 @@ describe('auth store checkAuth refresh (issue #4023)', () => {
 		expect(store.authenticated).toBe(true)
 	})
 
-	it('keeps the token when the boot backoff runs out but does not refresh it again this boot', async () => {
+	it('rejects with the rate limit and keeps the token when the boot backoff runs out', async () => {
 		vi.useFakeTimers()
 		localStorage.setItem('token', STALE_JWT)
 		postMock.mockRejectedValue(refreshRejection(429))
 		const store = useAuthStore()
 
-		const check = store.checkAuth({boot: true})
+		const check = expect(store.checkAuth({boot: true})).rejects.toMatchObject({cause: {status: 429}})
 		await vi.runAllTimersAsync()
 		await check
 
 		expect(refreshCalls()).toBe(7)
 		expect(localStorage.getItem('token')).toBe(STALE_JWT)
 		expect(store.authenticated).toBe(false)
-
-		await store.checkAuth({boot: true})
-
-		expect(refreshCalls()).toBe(7)
 	})
 
 	it('adopts a token another tab stored during the boot rate limit backoff', async () => {
@@ -252,10 +248,10 @@ describe('auth store checkAuth refresh (issue #4023)', () => {
 		postMock.mockRejectedValue(refreshRejection(429))
 		const store = useAuthStore()
 
-		const navigation = store.checkAuth({boot: true})
+		const navigation = expect(store.checkAuth({boot: true})).rejects.toMatchObject({cause: {status: 429}})
 		// Offset so the second check can't piggyback on the first's in-flight POST.
 		await vi.advanceTimersByTimeAsync(500)
-		const hydration = store.checkAuth({boot: true})
+		const hydration = expect(store.checkAuth({boot: true})).rejects.toMatchObject({cause: {status: 429}})
 		await vi.runAllTimersAsync()
 		await Promise.all([navigation, hydration])
 
