@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHistory, START_LOCATION } from 'vue-router'
 import type { RouteLocation } from 'vue-router'
 import {saveLastVisited} from '@/helpers/saveLastVisited'
 
@@ -596,7 +596,7 @@ export async function getAuthForRoute(to: RouteLocation, authStore: {
 router.beforeEach(async (to, from) => {
 	const authStore = useAuthStore()
 
-	await authStore.checkAuth()
+	await authStore.checkAuth({boot: from === START_LOCATION})
 
 	if (to.meta?.requiresAdminPanel) {
 		// Await config/auth hydration so the license check doesn't race the empty default

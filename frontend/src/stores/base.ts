@@ -98,13 +98,13 @@ export const useBaseStore = defineStore('base', () => {
 				if (storedApiUrl) {
 					// Hydrate /info before marking ready; otherwise pro-feature gates stay off for returning desktop users.
 					await checkAndSetApiUrl(storedApiUrl)
-					await authStore.checkAuth()
+					await authStore.checkAuth({boot: true})
 				}
 				return
 			}
 
 			await checkAndSetApiUrl(window.API_URL)
-			await authStore.checkAuth()
+			await authStore.checkAuth({boot: true})
 		} catch (e: unknown) {
 			if (e instanceof NoApiUrlProvidedError) {
 				error.value = ERROR_NO_API_URL

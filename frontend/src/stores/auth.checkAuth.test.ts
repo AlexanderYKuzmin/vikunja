@@ -126,7 +126,23 @@ describe('auth store checkAuth refresh (issue #4023)', () => {
 		expect(refreshCalls()).toBe(2)
 	})
 
-	it('stays logged in when the refresh succeeds after a rate limit', async () => {
+	it('keeps the token on a navigation rate limit without backing off or refreshing it again', async () => {
+		localStorage.setItem('token', STALE_JWT)
+		postMock.mockRejectedValue(refreshRejection(429))
+		const store = useAuthStore()
+
+		await store.checkAuth()
+
+		expect(refreshCalls()).toBe(1)
+		expect(localStorage.getItem('token')).toBe(STALE_JWT)
+		expect(store.authenticated).toBe(false)
+
+		await store.checkAuth()
+
+		expect(refreshCalls()).toBe(1)
+	})
+
+	it('stays logged in when the boot refresh succeeds after a rate limit', async () => {
 		vi.useFakeTimers()
 		localStorage.setItem('token', STALE_JWT)
 		postMock
@@ -136,7 +152,7 @@ describe('auth store checkAuth refresh (issue #4023)', () => {
 		userShowMock.mockResolvedValue({data: {id: 1, username: 'user1'}})
 		const store = useAuthStore()
 
-		const check = store.checkAuth()
+		const check = store.checkAuth({boot: true})
 		await vi.runAllTimersAsync()
 		await check
 
@@ -145,13 +161,13 @@ describe('auth store checkAuth refresh (issue #4023)', () => {
 		expect(store.authenticated).toBe(true)
 	})
 
-	it('keeps the token on a persistent rate limit but does not refresh it again this boot', async () => {
+	it('keeps the token when the boot backoff runs out but does not refresh it again this boot', async () => {
 		vi.useFakeTimers()
 		localStorage.setItem('token', STALE_JWT)
 		postMock.mockRejectedValue(refreshRejection(429))
 		const store = useAuthStore()
 
-		const check = store.checkAuth()
+		const check = store.checkAuth({boot: true})
 		await vi.runAllTimersAsync()
 		await check
 
@@ -159,12 +175,12 @@ describe('auth store checkAuth refresh (issue #4023)', () => {
 		expect(localStorage.getItem('token')).toBe(STALE_JWT)
 		expect(store.authenticated).toBe(false)
 
-		await store.checkAuth()
+		await store.checkAuth({boot: true})
 
 		expect(refreshCalls()).toBe(7)
 	})
 
-	it('adopts a token another tab stored during the rate limit backoff', async () => {
+	it('adopts a token another tab stored during the boot rate limit backoff', async () => {
 		vi.useFakeTimers()
 		localStorage.setItem('token', STALE_JWT)
 		postMock.mockImplementation(async () => {
@@ -174,7 +190,7 @@ describe('auth store checkAuth refresh (issue #4023)', () => {
 		userShowMock.mockResolvedValue({data: {id: 1, username: 'user1'}})
 		const store = useAuthStore()
 
-		const check = store.checkAuth()
+		const check = store.checkAuth({boot: true})
 		await vi.runAllTimersAsync()
 		await check
 
@@ -183,7 +199,7 @@ describe('auth store checkAuth refresh (issue #4023)', () => {
 		expect(store.authenticated).toBe(true)
 	})
 
-	it('stays logged out when another tab logs out during the rate limit backoff', async () => {
+	it('stays logged out when another tab logs out during the boot rate limit backoff', async () => {
 		vi.useFakeTimers()
 		localStorage.setItem('token', STALE_JWT)
 		postMock
@@ -195,7 +211,7 @@ describe('auth store checkAuth refresh (issue #4023)', () => {
 			.mockRejectedValue(refreshRejection(429))
 		const store = useAuthStore()
 
-		const check = store.checkAuth()
+		const check = store.checkAuth({boot: true})
 		await vi.runAllTimersAsync()
 		await check
 
@@ -209,7 +225,7 @@ describe('auth store checkAuth refresh (issue #4023)', () => {
 		expect(localStorage.getItem('token')).toBeNull()
 	})
 
-	it('stops the rate limit backoff at a 401 and drops the stale token', async () => {
+	it('stops the boot rate limit backoff at a 401 and drops the stale token', async () => {
 		vi.useFakeTimers()
 		localStorage.setItem('token', STALE_JWT)
 		postMock
@@ -217,7 +233,7 @@ describe('auth store checkAuth refresh (issue #4023)', () => {
 			.mockRejectedValue(refreshRejection(401, 16005))
 		const store = useAuthStore()
 
-		const check = store.checkAuth()
+		const check = store.checkAuth({boot: true})
 		await vi.runAllTimersAsync()
 		await check
 
@@ -230,18 +246,18 @@ describe('auth store checkAuth refresh (issue #4023)', () => {
 		expect(refreshCalls()).toBe(2)
 	})
 
-	it('shares one rate limit backoff between concurrent checks', async () => {
+	it('shares one rate limit backoff between hydration and the initial navigation', async () => {
 		vi.useFakeTimers()
 		localStorage.setItem('token', STALE_JWT)
 		postMock.mockRejectedValue(refreshRejection(429))
 		const store = useAuthStore()
 
-		const first = store.checkAuth()
+		const navigation = store.checkAuth({boot: true})
 		// Offset so the second check can't piggyback on the first's in-flight POST.
 		await vi.advanceTimersByTimeAsync(500)
-		const second = store.checkAuth()
+		const hydration = store.checkAuth({boot: true})
 		await vi.runAllTimersAsync()
-		await Promise.all([first, second])
+		await Promise.all([navigation, hydration])
 
 		expect(refreshCalls()).toBe(7)
 	})
