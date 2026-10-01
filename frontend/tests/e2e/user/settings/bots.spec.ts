@@ -1,5 +1,6 @@
 import {test, expect} from '../../../support/fixtures'
 import {gotoUserSettings} from '../../../support/userSettings'
+import {serverPageSize} from '../../../support/pagination'
 
 test('manages a bot and its scoped token across reloads', async ({authenticatedPage: page, apiContext, userToken}) => {
 	await gotoUserSettings(page, 'bots')
@@ -43,4 +44,63 @@ test('manages a bot and its scoped token across reloads', async ({authenticatedP
 	const response = await apiContext.get('/api/v2/user/bots', {headers: {Authorization: `Bearer ${userToken}`}})
 	expect(response.ok()).toBe(true)
 	expect((await response.json()).items).toEqual([])
+})
+
+test('pages through bots and leaves an emptied last page', async ({authenticatedPage: page, apiContext, userToken}) => {
+	const pageSize = await serverPageSize(apiContext)
+	for (let i = 1; i <= pageSize + 1; i++) {
+		const response = await apiContext.post('/api/v2/user/bots', {
+			headers: {Authorization: `Bearer ${userToken}`},
+			data: {username: `bot-paged-${i}`},
+		})
+		expect(response.ok()).toBe(true)
+	}
+	await gotoUserSettings(page, 'bots')
+	const cards = page.locator('.bot-card')
+	await expect(cards).toHaveCount(pageSize)
+	await page.getByRole('link', {name: 'Goto page 2'}).click()
+	await expect(page).toHaveURL(/[?&]page=2/)
+	await expect(cards).toHaveCount(1)
+	await cards.locator('.bot-actions').getByRole('button', {name: 'Delete', exact: true}).click()
+	await page.locator('[data-cy="modalPrimary"]').click()
+	await expect(page).not.toHaveURL(/[?&]page=2/)
+	await expect(cards).toHaveCount(pageSize)
+	await expect(page.getByRole('link', {name: 'Goto page 2'})).toHaveCount(0)
+})
+
+test('shows a bot created past the first page on its page', async ({authenticatedPage: page, apiContext, userToken}) => {
+	const pageSize = await serverPageSize(apiContext)
+	for (let i = 1; i <= pageSize; i++) {
+		const response = await apiContext.post('/api/v2/user/bots', {
+			headers: {Authorization: `Bearer ${userToken}`},
+			data: {username: `bot-full-${i}`},
+		})
+		expect(response.ok()).toBe(true)
+	}
+	await gotoUserSettings(page, 'bots')
+	const cards = page.locator('.bot-card')
+	await expect(cards).toHaveCount(pageSize)
+	await page.getByRole('button', {name: 'Create bot', exact: true}).click()
+	await page.getByPlaceholder('bot-myassistant').fill('overflow')
+	await page.getByRole('button', {name: 'Create bot', exact: true}).click()
+	await expect(page.locator('.global-notification')).toContainText('bot-overflow')
+	await expect(page).toHaveURL(/[?&]page=2/)
+	await expect(cards).toHaveCount(1)
+	await expect(cards).toContainText('bot-overflow')
+})
+
+test('clamps an out-of-range page to the last page', async ({authenticatedPage: page, apiContext, userToken}) => {
+	const pageSize = await serverPageSize(apiContext)
+	for (let i = 1; i <= pageSize + 1; i++) {
+		const response = await apiContext.post('/api/v2/user/bots', {
+			headers: {Authorization: `Bearer ${userToken}`},
+			data: {username: `bot-clamped-${i}`},
+		})
+		expect(response.ok()).toBe(true)
+	}
+	await page.goto('/user/settings/bots?page=99')
+	await expect(page).toHaveURL(/[?&]page=2(&|$)/)
+	const cards = page.locator('.bot-card')
+	await expect(cards).toHaveCount(1)
+	await expect(cards).toContainText(`bot-clamped-${pageSize + 1}`)
 })

@@ -1,21 +1,24 @@
 <script setup lang="ts">
 import {computed, ref, watch} from 'vue'
 import {useI18n} from 'vue-i18n'
+import {useRouteQuery} from '@vueuse/router'
 import {useTitle} from '@/composables/useTitle'
+import {useClampedPage} from '@/composables/useClampedPage'
 
 import XButton from '@/components/input/Button.vue'
 import FormField from '@/components/input/FormField.vue'
 import Message from '@/components/misc/Message.vue'
+import Pagination from '@/components/misc/Pagination.vue'
 import PaginationEmit from '@/components/misc/PaginationEmit.vue'
 import ApiTokenForm from '@/components/token/ApiTokenForm.vue'
 
 import {botsQuery, useCreateBotMutation, useUpdateBotMutation, useDeleteBotMutation} from '@/client/queries/bots'
+import {clampPage, normalizePageNumber} from '@/client/queries/pagination'
 import {useQueries, useQuery} from '@tanstack/vue-query'
 import {botApiTokensQuery, useDeleteApiTokenMutation} from '@/client/queries/apiTokens'
-import {clampPage} from '@/client/queries/pagination'
 import type {ApiToken, BotUser} from '@/client/generated'
 import {formatDisplayDate} from '@/helpers/time/formatDate'
-import {getErrorText} from '@/message'
+import {getErrorText, success} from '@/message'
 
 type Bot = BotUser & Required<Pick<BotUser, 'id' | 'status'>>
 
@@ -25,12 +28,16 @@ const STATUS_DISABLED = 2
 const {t} = useI18n({useScope: 'global'})
 useTitle(() => t('user.settings.bots.title'))
 
-const {data: botData} = useQuery(botsQuery())
+const page = useRouteQuery('page', '1', {transform: normalizePageNumber})
+const {data: botPage, isPlaceholderData} = useQuery(computed(() => botsQuery(page.value)))
 const createMutation = useCreateBotMutation()
 const updateMutation = useUpdateBotMutation()
 const deleteMutation = useDeleteBotMutation()
 const deleteTokenMutation = useDeleteApiTokenMutation()
-const bots = computed(() => (botData.value ?? []).filter((bot): bot is Bot => typeof bot.id === 'number' && bot.id > 0 && typeof bot.status === 'number'))
+const bots = computed(() => (botPage.value?.items ?? []).filter((bot): bot is Bot => typeof bot.id === 'number' && bot.id > 0 && typeof bot.status === 'number'))
+const totalPages = computed(() => botPage.value?.total_pages ?? 0)
+const hasBots = computed(() => (botPage.value?.total ?? 0) > 0)
+useClampedPage(page, {data: botPage, isPlaceholderData})
 const newBotUsername = ref('')
 const newBotName = ref('')
 const createError = ref<string | null>(null)
@@ -67,11 +74,16 @@ async function createBot() {
 	if (trimmedName !== '') {
 		payload.name = trimmedName
 	}
+	const before = botPage.value
 	try {
-		await createMutation.mutateAsync(payload)
+		const created = await createMutation.mutateAsync(payload)
 		newBotUsername.value = ''
 		newBotName.value = ''
 		showCreateForm.value = false
+		success({message: t('user.settings.bots.createSuccess', {username: created.username})})
+		if (before && before.per_page > 0) {
+			page.value = Math.ceil((before.total + 1) / before.per_page)
+		}
 	} catch (e: unknown) {
 		createError.value = getErrorText(e)
 	}
@@ -137,12 +149,15 @@ async function deleteToken(token: ApiToken) {
 </script>
 
 <template>
-	<div class="content">
+	<div
+		class="content loader-container"
+		:class="{'is-loading': isPlaceholderData}"
+	>
 		<h2>{{ $t('user.settings.bots.title') }}</h2>
 		<p>{{ $t('user.settings.bots.description') }}</p>
 
 		<div
-			v-if="bots.length === 0 || showCreateForm"
+			v-if="!hasBots || showCreateForm"
 			class="create-form"
 		>
 			<FormField
@@ -317,6 +332,11 @@ async function deleteToken(token: ApiToken) {
 				</XButton>
 			</div>
 		</div>
+
+		<Pagination
+			:total-pages="totalPages"
+			:current-page="page"
+		/>
 
 		<Modal
 			:enabled="showDeleteModal"
